@@ -1657,12 +1657,12 @@ isaaclab-from-source = [
     { name = "isaaclab-tasks-experimental", editable = "submodules/IsaacLab/source/isaaclab_tasks_experimental" },
     { name = "isaaclab-teleop", editable = "submodules/IsaacLab/source/isaaclab_teleop" },
     { name = "isaaclab-visualizers", editable = "submodules/IsaacLab/source/isaaclab_visualizers" },
-    { name = "openpi-client", git = "https://github.com/Physical-Intelligence/openpi?subdirectory=packages%2Fopenpi-client&rev=c23745b5ad24e98f66967ea795a07b2588ed6c79" },
+    { name = "openpi-client", git = "https://v6.gh-proxy.org/https://github.com/Physical-Intelligence/openpi?subdirectory=packages%2Fopenpi-client&rev=c23745b5ad24e98f66967ea795a07b2588ed6c79" },
     { name = "torch", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchaudio", specifier = "==2.11.0", index = "https://download.pytorch.org/whl/cu128" },
     { name = "torchvision", specifier = "==0.26.0", index = "https://download.pytorch.org/whl/cu128" },
 ]
-openpi = [{ name = "openpi-client", git = "https://github.com/Physical-Intelligence/openpi?subdirectory=packages%2Fopenpi-client&rev=c23745b5ad24e98f66967ea795a07b2588ed6c79" }]
+openpi = [{ name = "openpi-client", git = "https://v6.gh-proxy.org/https://github.com/Physical-Intelligence/openpi?subdirectory=packages%2Fopenpi-client&rev=c23745b5ad24e98f66967ea795a07b2588ed6c79" }]
 
 [[package]]
 name = "isaaclab-assets"
@@ -1892,8 +1892,8 @@ requires-dist = [
     { name = "resolve-robotics-uri-py", specifier = ">=0.4.0" },
     { name = "rich" },
     { name = "rich", marker = "extra == 'sb3'" },
-    { name = "rl-games", marker = "extra == 'rl-games'", git = "https://github.com/isaac-sim/rl_games.git?rev=5cf4f9ff07e9a01bbefd167cf19b6804b294b51c" },
-    { name = "robomimic", marker = "sys_platform == 'linux' and extra == 'mimic'", git = "https://github.com/ARISE-Initiative/robomimic.git?rev=v0.4.0" },
+    { name = "rl-games", marker = "extra == 'rl-games'", git = "https://v6.gh-proxy.org/https://github.com/isaac-sim/rl_games.git?rev=5cf4f9ff07e9a01bbefd167cf19b6804b294b51c" },
+    { name = "robomimic", marker = "sys_platform == 'linux' and extra == 'mimic'", git = "https://v6.gh-proxy.org/https://github.com/ARISE-Initiative/robomimic.git?rev=v0.4.0" },
     { name = "rsl-rl-lib", specifier = "==5.4.1" },
     { name = "rsl-rl-lib", marker = "extra == 'rsl-rl'", specifier = "==5.4.1" },
     { name = "scipy", specifier = ">=1.11.0" },
@@ -3710,7 +3710,7 @@ wheels = [
 [[package]]
 name = "openpi-client"
 version = "0.1.0"
-source = { git = "https://github.com/Physical-Intelligence/openpi?subdirectory=packages%2Fopenpi-client&rev=c23745b5ad24e98f66967ea795a07b2588ed6c79#c23745b5ad24e98f66967ea795a07b2588ed6c79" }
+source = { git = "https://v6.gh-proxy.org/https://github.com/Physical-Intelligence/openpi?subdirectory=packages%2Fopenpi-client&rev=c23745b5ad24e98f66967ea795a07b2588ed6c79#c23745b5ad24e98f66967ea795a07b2588ed6c79" }
 dependencies = [
     { name = "dm-tree", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "msgpack", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
@@ -4579,7 +4579,7 @@ wheels = [
 [[package]]
 name = "robomimic"
 version = "0.4.0"
-source = { git = "https://github.com/ARISE-Initiative/robomimic.git?rev=v0.4.0#7c66e7a41b5d9dcc905b1a68346bfee1b49b79c9" }
+source = { git = "https://v6.gh-proxy.org/https://github.com/ARISE-Initiative/robomimic.git?rev=v0.4.0#7c66e7a41b5d9dcc905b1a68346bfee1b49b79c9" }
 dependencies = [
     { name = "egl-probe", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "h5py", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
