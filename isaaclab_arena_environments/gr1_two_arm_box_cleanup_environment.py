@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -216,19 +215,31 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 ),
             )
 
+        class BoxCleanupCompletionCriteria(CompletionCriteria):
+            """Keep derived predicate tuples out of the serialized environment config."""
+
+            def __post_init__(self):
+                # Retain stock validation, but store only constructor fields for Hydra.
+                self.logical = CompletionCriteria(**vars(self)).logical
+
+            @property
+            def canonical_predicate_sequences(self):
+                return CompletionCriteria(**vars(self)).canonical_predicate_sequences
+
         class TwoArmBoxCleanupTask(GoalPoseTask):
             def get_termination_cfg(self) -> TaskTerminationCfg:
                 source_terminations = TerminationsCfg()
-                # Keep manager config dataclasses out of Hydra's nested predicate sequences.
-                success = partial(
-                    _object_near_target,
-                    task_link_name="right_hand_roll_link",
-                    object_cfg=SceneEntityCfg("object"),
-                    target_cfg=SceneEntityCfg("object_2"),
+                success = source_terminations.success.replace(
+                    func=_object_near_target,
+                    params={
+                        "task_link_name": "right_hand_roll_link",
+                        "object_cfg": SceneEntityCfg("object"),
+                        "target_cfg": SceneEntityCfg("object_2"),
+                    },
                 )
                 return TaskTerminationCfg(
                     timeout_s=self.episode_length_s,
-                    success=[CompletionCriteria(name="box_cleanup", predicate_sequence=[success])],
+                    success=[BoxCleanupCompletionCriteria(name="box_cleanup", predicate_sequence=[success])],
                     failures={"object_dropping": source_terminations.object_dropping},
                 )
 
