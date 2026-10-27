@@ -102,19 +102,6 @@ def _object_lifted(
     return obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2] > min_height
 
 
-def _rotate_clockwise_90(rotation_xyzw: tuple[float, float, float, float]) -> tuple[float, float, float, float]:
-    """Apply a clockwise 90-degree world-Z rotation to an initial orientation."""
-    x, y, z, w = rotation_xyzw
-    qz = -math.sqrt(0.5)
-    qw = math.sqrt(0.5)
-    return (
-        qw * x - qz * y,
-        qw * y + qz * x,
-        qw * z - qz * w,
-        qw * w + qz * z,
-    )
-
-
 def _object_near_target(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
@@ -368,7 +355,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=tuple(source_scene.robot.init_state.pos),
-                rotation_xyzw=_rotate_clockwise_90(tuple(source_scene.robot.init_state.rot)),
+                rotation_xyzw=(0.0, 0.0, 0.7071068, 0.7071068),
             )
         )
         embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
@@ -390,7 +377,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             ),
             initial_pose=Pose(
                 position_xyz=tuple(source_scene.packing_table.init_state.pos),
-                rotation_xyzw=_rotate_clockwise_90(tuple(source_scene.packing_table.init_state.rot)),
+                rotation_xyzw=tuple(source_scene.packing_table.init_state.rot),
             ),
         )
         lid = Object(
@@ -400,10 +387,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             spawner_cfg=source_scene.object.spawn.replace(
                 usd_path=cfg.lid_usd_path, scale=LID_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(
-                position_xyz=LID_POSITION,
-                rotation_xyzw=_rotate_clockwise_90((0.0, 0.0, 0.0, 1.0)),
-            ),
+            initial_pose=Pose(position_xyz=LID_POSITION),
         )
         bin_object = Object(
             name="object_2",
@@ -412,10 +396,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             spawner_cfg=source_scene.object.spawn.replace(
                 usd_path=cfg.bin_usd_path, scale=BIN_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(
-                position_xyz=BIN_POSITION,
-                rotation_xyzw=_rotate_clockwise_90((0.0, 0.0, 0.0, 1.0)),
-            ),
+            initial_pose=Pose(position_xyz=BIN_POSITION),
         )
         # Source reset events restore and randomize both default poses without competing asset resets.
         lid.disable_reset_pose()
