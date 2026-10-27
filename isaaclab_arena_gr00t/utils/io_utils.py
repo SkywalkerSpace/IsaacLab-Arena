@@ -167,7 +167,8 @@ def load_config_from_yaml(yaml_path: str | Path, config_class: type[ConfigType])
     return converted_data
 
 
-def create_config_from_yaml(yaml_path: str | Path, config_class: type[ConfigType]) -> ConfigType:
+
+def create_config_from_yaml(yaml_path: str | Path, config_class: type[ConfigType], hdf5_name: str | None = None, language_instruction: str | None = None) -> ConfigType:
     """Create a configuration object from a YAML file using any dataclass.
 
     Args:
@@ -183,6 +184,11 @@ def create_config_from_yaml(yaml_path: str | Path, config_class: type[ConfigType
     """
     try:
         converted_data = load_config_from_yaml(yaml_path, config_class)
+        if hdf5_name is not None:
+            converted_data["hdf5_name"] = hdf5_name
+        if language_instruction is not None:
+            converted_data["language_instruction"] = language_instruction
+
         config = config_class(**converted_data)
     except Exception as e:
         print(f"Error creating {config_class.__name__}: {e}")

@@ -635,19 +635,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Convert Dataset from HDF5 to GR00T LeRobot Format")
     parser.add_argument("--yaml_file", help="Path to YAML configuration file", required=True)
-    parser.add_argument("--data_root", help="Root directory for input and output data (overrides YAML)")
     parser.add_argument("--hdf5_name", help="Input HDF5 filename (overrides YAML)")
     parser.add_argument("--language_instruction", help="Task instruction (overrides YAML)")
     args = parser.parse_args()
 
-    config = create_config_from_yaml(args.yaml_file, Gr00tDatasetConfig)
-    if args.data_root is not None:
-        config.data_root = Path(args.data_root)
-    if args.hdf5_name is not None:
-        config.hdf5_name = args.hdf5_name
-    if args.language_instruction is not None:
-        config.language_instruction = args.language_instruction
-
+    config = create_config_from_yaml(args.yaml_file, Gr00tDatasetConfig, args.hdf5_name, args.language_instruction)
     # Print the config
     print("\n" + "=" * 50)
     print("GR00T LEROBOT DATASET CONFIGURATION:")
