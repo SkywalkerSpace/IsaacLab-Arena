@@ -283,9 +283,9 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         embodiment = self.asset_registry.get_asset_by_name(cfg.embodiment)(enable_cameras=cfg.enable_cameras)
         embodiment.arm_mode = ArmMode.DUAL_ARM
         embodiment.scene_config.robot = source_scene.robot.copy()
-        embodiment.scene_config.robot.init_state.joint_pos.update(
-            {"right_elbow_pitch_joint": -2.260, "left_elbow_pitch_joint": -2.260}
-        )
+        # embodiment.scene_config.robot.init_state.joint_pos.update(
+        #     {"right_elbow_pitch_joint": -2.260, "left_elbow_pitch_joint": -2.260}
+        # )
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=tuple(source_scene.robot.init_state.pos),
@@ -349,7 +349,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         )
         scene = Scene(assets=[table, lid, bin_object, ground, light])
         task = TwoArmBoxCleanupTask(object=lid, episode_length_s=cfg.episode_length_s)
-        task.task_description = "Use both hands to bring the box lid close to the bin, then retract the right hand."
+        task.task_description = "Use both hands to bring the box lid close to the bin."
         task.scene_config = BoxCleanupSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         task.events_cfg = BoxCleanupEventsCfg()
 
