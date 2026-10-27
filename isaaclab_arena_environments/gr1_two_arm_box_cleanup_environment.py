@@ -378,6 +378,9 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         embodiment.arm_mode = ArmMode.DUAL_ARM
         embodiment.mimic_env = BoxCleanupMimicEnv
         embodiment.scene_config.robot = source_scene.robot.copy()
+        # The source robot faces +Y. XR forward maps to +Y with an identity anchor;
+        # FOLLOW_PRIM_SMOOTHED follows only pelvis yaw changes, not its initial yaw.
+        embodiment.xr.anchor_rot = (0.0, 0.0, 0.0, 1.0)
         # embodiment.scene_config.robot.init_state.joint_pos.update(
         #     {"right_elbow_pitch_joint": -2.260, "left_elbow_pitch_joint": -2.260}
         # )
