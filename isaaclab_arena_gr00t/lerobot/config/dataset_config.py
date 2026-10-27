@@ -49,7 +49,7 @@ class Gr00tDatasetConfig:
     action_name_sim: str = field(
         default="processed_actions", metadata={"description": "Name of the action in the HDF5 file."}
     )
-    pov_cam_name_sim: str = field(
+    pov_cam_name_sim: str | list[str] = field(
         default="robot_head_cam", metadata={"description": "Name of the POV camera in the HDF5 file."}
     )
     # Gr00t-LeRobot datafield
@@ -63,7 +63,7 @@ class Gr00tDatasetConfig:
         default="action.eef", metadata={"description": "Name of the eef action in the HDF5 file."}
     )
 
-    video_name_lerobot: str = field(
+    video_name_lerobot: str | list[str] = field(
         default="observation.images.ego_view", metadata={"description": "Name of the video in the LeRobot file."}
     )
     task_description_lerobot: str = field(
