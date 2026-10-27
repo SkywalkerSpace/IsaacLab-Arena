@@ -8,7 +8,7 @@
 # Example for GR1 tabletop manipulation task
 
 # Root directory for all data storage
-data_root: "datasets/two_arm_box_cleanup/"
+data_root: "datasets/"
 
 # Instruction given to the policy in natural language
 language_instruction: "Use both hands to bring the box lid close to the bin."
