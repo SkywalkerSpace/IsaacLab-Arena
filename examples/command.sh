@@ -6,6 +6,18 @@ gr1_table_multi_object_no_collision
 
 gr1_turn_stand_mixer_knob
 
+gr1_two_arm_box_cleanup
+
+gr1_two_arm_can_sort_random
+
+gr1_two_arm_coffee
+
+gr1_two_arm_drawer_cleanup
+
+gr1_two_arm_lift_tray
+
+gr1_two_arm_pouring
+
 
 cd submodules/Isaac-GR00T
 
