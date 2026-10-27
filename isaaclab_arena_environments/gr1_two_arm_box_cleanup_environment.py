@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import argparse
 import math
 from dataclasses import dataclass
 from pathlib import Path
@@ -126,6 +127,15 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
 
     name = "gr1_two_arm_box_cleanup"
     _legacy_argparse_cfg_type = GR1TwoArmBoxCleanupEnvironmentCfg
+
+    @staticmethod
+    def _add_legacy_cli_only_args(parser: argparse.ArgumentParser) -> None:
+        parser.add_argument(
+            "--object",
+            type=str,
+            default=None,
+            help="Accepted for CLI compatibility only; use --lid_usd_path and --bin_usd_path to select assets.",
+        )
 
     def build(self, cfg: GR1TwoArmBoxCleanupEnvironmentCfg) -> IsaacLabArenaEnvironment:
         """Build the custom task from stock GR1 configs without importing the custom Lab environment."""
