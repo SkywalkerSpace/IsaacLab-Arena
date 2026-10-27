@@ -37,7 +37,7 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
   --xr \
   --cloudxr_env cloudxrjs \
   --dataset_file datasets/${TSAK_NAME}_recorded.hdf5 \
-  --num_demos 10 \
+  --num_demos 5 \
   --num_success_steps 10 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
@@ -56,7 +56,6 @@ python submodules/IsaacLab/scripts/tools/replay_demos.py \
 
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
-  --viz kit \
   --device cpu \
   --input_file datasets/${TSAK_NAME}_recorded.hdf5 \
   --output_file datasets/${TSAK_NAME}_annotated.hdf5 \
@@ -65,6 +64,7 @@ python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_de
   --task ${TSAK_NAME} \
   --embodiment gr1_pink \
   --auto
+  # --viz kit
 
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py \
@@ -78,6 +78,7 @@ python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_da
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink
+  # --viz kit
 
 
 python submodules/IsaacLab/scripts/tools/replay_demos.py \
