@@ -249,14 +249,14 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
 
         @configclass
         class BoxCleanupSubtaskTermsCfg(ObservationGroupCfg):
-            # Separate lift thresholds keep the taller bin from starting with a true grasp signal.
+            # Both arms finish the shared pick when the lid rises 5 cm above its initial height.
             grasp_left = ObservationTermCfg(
                 func=_object_lifted,
-                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.03},
+                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.05},
             )
             grasp_right = ObservationTermCfg(
                 func=_object_lifted,
-                params={"object_cfg": SceneEntityCfg("object_2"), "min_height": BIN_POSITION[2] + 0.03},
+                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.05},
             )
             concatenate_terms = False
             enable_corruption = False

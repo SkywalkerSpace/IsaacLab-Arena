@@ -27,6 +27,7 @@ gr1_two_arm_pouring
 
 export TSAK_NAME=gr1_two_arm_box_cleanup
 
+export DATASET_DIR=datasets
 
 python submodules/IsaacLab/scripts/tools/record_demos.py \
   --device cpu \
@@ -60,14 +61,15 @@ python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_de
   --mimic \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
-  --embodiment gr1_pink
+  --embodiment gr1_pink \
+  --auto
 
 
 export NUM_GENERATED_DEMOS=100
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py \
   --device cpu \
   --generation_num_trials ${NUM_GENERATED_DEMOS} \
-  --num_envs 10 \
+  --num_envs 20 \
   --input_file datasets/${TSAK_NAME}_annotated.hdf5 \
   --output_file datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
   --enable_cameras \
@@ -86,6 +88,12 @@ python submodules/IsaacLab/scripts/tools/replay_demos.py \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink
 
+
+python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
+  --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
+  --data_root datasets/${TSAK_NAME}/ \
+  --hdf5_name datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
+  --language_instruction "Use both hands to bring the box lid close to the bin."
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 

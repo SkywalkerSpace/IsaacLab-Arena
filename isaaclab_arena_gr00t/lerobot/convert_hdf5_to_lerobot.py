@@ -33,6 +33,28 @@ from isaaclab_arena_gr00t.utils.robot_eef_pose import EefPose
 from isaaclab_arena_gr00t.utils.robot_joints import JointsAbsPosition
 
 
+def _get_video_pairs(config: Gr00tDatasetConfig) -> list[tuple[str, str]]:
+    """Return (simulation camera key, LeRobot video key) pairs for one or more cameras."""
+    camera_names = config.pov_cam_name_sim
+    video_names = config.video_name_lerobot
+    camera_names = list(camera_names) if isinstance(camera_names, (list, tuple)) else [camera_names]
+    video_names = list(video_names) if isinstance(video_names, (list, tuple)) else [video_names]
+
+    if len(camera_names) != len(video_names):
+        raise ValueError(
+            "pov_cam_name_sim and video_name_lerobot must contain the same number of entries "
+            f"(got {len(camera_names)} and {len(video_names)})."
+        )
+    if not camera_names or any(not name for name in camera_names + video_names):
+        raise ValueError("Camera and video key lists must be non-empty and contain no empty values.")
+    if len(set(camera_names)) != len(camera_names):
+        raise ValueError("pov_cam_name_sim contains duplicate camera keys.")
+    if len(set(video_names)) != len(video_names):
+        raise ValueError("video_name_lerobot contains duplicate video keys.")
+
+    return list(zip(camera_names, video_names))
+
+
 def wait_for_video_completion(video_path: str, max_wait_time: int = 60, check_interval: float = 0.5) -> bool:
     """
     Wait for a video file to be completely written and accessible.
@@ -493,6 +515,7 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
     total_length = 0
     example_data = None
     video_paths = {}
+    video_pairs = _get_video_pairs(config)
 
     trajectory_ids = list(hdf5_data.keys())
 
@@ -526,20 +549,28 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
             "length": length,
         })
         # 2.3. Generate videos/
-        new_video_relpath = config.video_path.format(
-            episode_chunk=episode_chunk, video_key=config.lerobot_keys["video"], episode_index=episode_index
-        )
-        new_video_path = config.lerobot_data_dir / new_video_relpath
-        if config.video_name_lerobot not in video_paths.keys():
-            video_paths[config.video_name_lerobot] = new_video_path
+        camera_obs = trajectory["camera_obs"]
+        for camera_name, video_name in video_pairs:
+            if camera_name not in camera_obs:
+                raise KeyError(
+                    f"Camera '{camera_name}' configured for video '{video_name}' "
+                    f"is missing from trajectory '{trajectory_id}'. Available cameras: {list(camera_obs.keys())}"
+                )
 
-        assert config.pov_cam_name_sim in trajectory["camera_obs"]
+            new_video_relpath = config.video_path.format(
+                episode_chunk=episode_chunk, video_key=video_name, episode_index=episode_index
+            )
+            new_video_path = config.lerobot_data_dir / new_video_relpath
+            video_paths.setdefault(video_name, new_video_path)
 
-        frames = np.array(trajectory["camera_obs"][config.pov_cam_name_sim])
-        # remove last frame due to how Lab reports observations
-        frames = frames[:-1]
-        assert len(frames) == length
-        queue.put((new_video_path, frames, config.fps, "image"))
+            frames = np.array(camera_obs[camera_name])
+            # Remove the last frame due to how Lab reports observations.
+            frames = frames[:-1]
+            assert len(frames) == length, (
+                f"Camera '{camera_name}' has {len(frames)} frames, expected {length} "
+                f"for trajectory '{trajectory_id}'."
+            )
+            queue.put((new_video_path, frames, config.fps, "image"))
 
         if example_data is None:
             example_data = df_ret_dict
@@ -572,10 +603,10 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
 
         # 3.4. Generate info.json (AFTER all videos are created)
         info_json = generate_info(
-            total_episodes=len(trajectory_ids),
+            total_episodes=len(episodes_info),
             total_frames=total_length,
             total_tasks=len(tasks),
-            total_videos=len(trajectory_ids),
+            total_videos=len(episodes_info) * len(video_pairs),
             total_chunks=len(trajectory_ids) // config.chunks_size,
             step_data=example_data["data"],
             video_paths=video_paths,
@@ -604,9 +635,19 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Convert Dataset from HDF5 to GR00T LeRobot Format")
     parser.add_argument("--yaml_file", help="Path to YAML configuration file", required=True)
+    parser.add_argument("--data_root", help="Root directory for input and output data (overrides YAML)")
+    parser.add_argument("--hdf5_name", help="Input HDF5 filename (overrides YAML)")
+    parser.add_argument("--language_instruction", help="Task instruction (overrides YAML)")
     args = parser.parse_args()
 
     config = create_config_from_yaml(args.yaml_file, Gr00tDatasetConfig)
+    if args.data_root is not None:
+        config.data_root = Path(args.data_root)
+    if args.hdf5_name is not None:
+        config.hdf5_name = args.hdf5_name
+    if args.language_instruction is not None:
+        config.language_instruction = args.language_instruction
+
     # Print the config
     print("\n" + "=" * 50)
     print("GR00T LEROBOT DATASET CONFIGURATION:")
