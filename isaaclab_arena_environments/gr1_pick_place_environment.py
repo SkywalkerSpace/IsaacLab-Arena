@@ -26,20 +26,17 @@ class GR1PickPlaceEnvironmentCfg(ArenaEnvironmentCfg):
     teleop_device: str | None = None
     episode_length_s: float = 20.0
 
-    def __post_init__(self) -> None:
-        assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
-        assert self.embodiment == "gr1_pink", "The source task requires the GR1T2 Pink IK embodiment"
-
 
 def _configure_gr1_pick_place(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
 ) -> IsaacLabArenaManagerBasedRLEnvCfg:
-    """Preserve the source task's simulation rate and glove feedback."""
+    """Apply 50 Hz control and preserve the source task's glove feedback."""
     from isaaclab_teleop.haptic_feedback import GloveHapticFeedbackCfg
     from isaaclab_teleop.isaac_teleop_cfg import XrCameraFeedCfg
 
-    env_cfg.sim.dt = 1 / 120
-    env_cfg.decimation = 6
+    from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import set_control_rate_50hz
+
+    env_cfg = set_control_rate_50hz(env_cfg)
     env_cfg.sim.render_interval = 2
     env_cfg.num_rerenders_on_reset = 3
     env_cfg.haptic_feedback = GloveHapticFeedbackCfg(
@@ -90,6 +87,9 @@ class GR1PickPlaceEnvironment(ArenaEnvironmentFactory[GR1PickPlaceEnvironmentCfg
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
 
+        assert math.isfinite(cfg.episode_length_s) and cfg.episode_length_s > 0, "episode_length_s must be positive"
+        assert cfg.embodiment == "gr1_pink", "The source task requires the GR1T2 Pink IK embodiment"
+
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
 
         @configclass
@@ -139,7 +139,9 @@ class GR1PickPlaceEnvironment(ArenaEnvironmentFactory[GR1PickPlaceEnvironmentCfg
                 place_subtask.selection_strategy = "random"
                 place_subtask.selection_strategy_kwargs = {}
                 # Keep the unused arm in its recorded pose, independent of pickup randomization.
-                idle_subtask = mimic_cfg.subtask_configs[arm_mode.get_other_arm().value][0]
+                idle_subtasks = mimic_cfg.subtask_configs.get(arm_mode.get_other_arm().value)
+                assert idle_subtasks, "GR1 pick-place requires an idle subtask for the unused arm"
+                idle_subtask = idle_subtasks[0]
                 idle_subtask.object_ref = None
                 idle_subtask.selection_strategy = "random"
                 idle_subtask.selection_strategy_kwargs = {}
@@ -160,7 +162,8 @@ class GR1PickPlaceEnvironment(ArenaEnvironmentFactory[GR1PickPlaceEnvironmentCfg
             )
         )
         embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
-        embodiment.camera_config.robot_pov_cam = source_scene.robot_pov_cam.copy()
+        if embodiment.camera_config is not None:
+            embodiment.camera_config.robot_pov_cam = source_scene.robot_pov_cam.copy()
         # Merge terms within one policy group; top-level composition cannot merge different policy types.
         embodiment.observation_config.policy = combine_configclass_instances(
             "GR1PickPlacePolicyCfg",

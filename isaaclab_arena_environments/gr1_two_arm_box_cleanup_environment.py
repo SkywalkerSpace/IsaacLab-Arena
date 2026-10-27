@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import argparse
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import IsaacLabArenaManagerBasedRLEnvCfg
 
 
-_ASSET_DIR = Path(__file__).resolve().parents[1] / "examples" / "assets" / "mjcf"
+_ASSET_DIR = Path(__file__).resolve().parents[1] / "examples" / "assets" / "mjcf2usd"
 LID_POSITION = (-0.05, 0.30, 1.01)
 BIN_POSITION = (0.05, 0.55, 1.07)
 LID_SCALE = (0.8, 0.8, 0.8)
@@ -40,10 +40,26 @@ class GR1TwoArmBoxCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     episode_length_s: float = 20.0
     lid_usd_path: str = str(_ASSET_DIR / "box_cleanup_lid.usd")
     bin_usd_path: str = str(_ASSET_DIR / "box_cleanup_bin.usd")
+    success_max_xy_distance: float = 0.10
+    success_max_height_difference: float = 0.08
+    success_max_speed: float = 0.20
+    """Componentwise lid velocity limits in m/s (linear) and rad/s (angular)."""
+    lid_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    """Success reference point in the scaled lid's root frame, in meters; calibrate for custom assets."""
+    bin_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    """Success reference point in the scaled bin's root frame, in meters; calibrate for custom assets."""
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
         assert self.embodiment == "gr1_pink", "Two-arm box cleanup requires the GR1T2 Pink IK embodiment"
+        for name in ("success_max_xy_distance", "success_max_height_difference", "success_max_speed"):
+            value = getattr(self, name)
+            assert math.isfinite(value) and value > 0, f"{name} must be finite and positive"
+        for name in ("lid_reference_offset", "bin_reference_offset"):
+            offset = getattr(self, name)
+            assert len(offset) == 3 and all(math.isfinite(value) for value in offset), (
+                f"{name} must contain three finite coordinates"
+            )
 
 
 def _spawn_packing_table_without_container(prim_path, cfg, translation=None, orientation=None, **kwargs):
@@ -76,46 +92,61 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
     return table_prim
 
 
+def _object_lifted(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    min_height: float,
+) -> torch.Tensor:
+    """Use object lift above an environment-local height [m] as a grasp proxy."""
+    obj = env.scene[object_cfg.name]
+    return obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2] > min_height
+
+
 def _object_near_target(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
     target_cfg: SceneEntityCfg,
-    task_link_name: str = "right_hand_roll_link",
     max_xy_distance: float = 0.10,
     max_height_difference: float = 0.08,
     max_height: float = 1.5,
-    right_wrist_max_x: float = 0.26,
-    min_vel: float = 0.20,
+    max_speed: float = 0.20,
+    object_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    target_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> torch.Tensor:
-    """Check proximity [m], componentwise speed [m/s, rad/s], and wrist retraction [m]."""
+    """Check local reference-point proximity [m] and lid velocity limits [m/s, rad/s]."""
     import torch
+
+    from isaaclab.utils.math import quat_apply
 
     obj = env.scene[object_cfg.name]
     target = env.scene[target_cfg.name]
     obj_pos = obj.data.root_pos_w.torch - env.scene.env_origins
     target_pos = target.data.root_pos_w.torch - env.scene.env_origins
-    xy_distance = torch.linalg.vector_norm(obj_pos[:, :2] - target_pos[:, :2], dim=1)
-    height_difference = torch.abs(obj_pos[:, 2] - target_pos[:, 2])
+    object_offset_O = obj_pos.new_tensor(object_reference_offset).expand_as(obj_pos)
+    target_offset_T = target_pos.new_tensor(target_reference_offset).expand_as(target_pos)
+    # O/T are object/target root frames; E is the translated environment frame.
+    object_point_E = obj_pos + quat_apply(obj.data.root_quat_w.torch, object_offset_O)
+    target_point_E = target_pos + quat_apply(target.data.root_quat_w.torch, target_offset_T)
+    xy_distance = torch.linalg.vector_norm(object_point_E[:, :2] - target_point_E[:, :2], dim=1)
+    height_difference = torch.abs(object_point_E[:, 2] - target_point_E[:, 2])
     velocity = torch.abs(obj.data.root_vel_w.torch)
-    robot = env.scene["robot"]
-    wrist_idx = robot.data.body_names.index(task_link_name)
-    wrist_x = robot.data.body_pos_w.torch[:, wrist_idx, 0] - env.scene.env_origins[:, 0]
     return (
         (xy_distance < max_xy_distance)
         & (height_difference < max_height_difference)
         & (obj_pos[:, 2] < max_height)
-        & (wrist_x < right_wrist_max_x)
-        & torch.all(velocity < min_vel, dim=1)
+        & torch.all(velocity < max_speed, dim=1)
     )
 
 
 def _configure_two_arm_box_cleanup(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
 ) -> IsaacLabArenaManagerBasedRLEnvCfg:
-    """Apply the original GR1 timing, glove feedback, and camera recording settings."""
+    """Apply 50 Hz control, glove feedback, and camera recording settings."""
+    from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import set_control_rate_50hz
     from isaaclab_arena_environments.gr1_pick_place_environment import _configure_gr1_pick_place
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
+    env_cfg = set_control_rate_50hz(env_cfg)
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
     return env_cfg
@@ -155,7 +186,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
         from isaaclab_arena.embodiments.common.arm_mode import ArmMode
-        from isaaclab_arena.embodiments.gr1t2.gr1t2 import GR1T2CameraCfg
+        from isaaclab_arena.embodiments.gr1t2.gr1t2 import GR1T2CameraCfg, GR1T2MimicEnv
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
         from isaaclab_arena.progress_tracking.completion_criteria import CompletionCriteria
         from isaaclab_arena.scene.scene import Scene
@@ -172,7 +203,9 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         class BoxCleanupSceneCfg(InteractiveSceneCfg):
             # The custom lid has a root rigid body, unlike the nested stock steering wheel.
             left_hand_contact = source_scene.left_hand_contact.replace(filter_prim_paths_expr=["{ENV_REGEX_NS}/Object"])
-            right_hand_contact = source_scene.right_hand_contact.replace(filter_prim_paths_expr=["{ENV_REGEX_NS}/Object"])
+            right_hand_contact = source_scene.right_hand_contact.replace(
+                filter_prim_paths_expr=["{ENV_REGEX_NS}/Object2"]
+            )
 
         @configclass
         class BoxCleanupEventsCfg(EventCfg):
@@ -199,6 +232,31 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             object_2_rot = ObservationTermCfg(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("object_2")})
             concatenate_terms = False
             enable_corruption = False
+
+        @configclass
+        class BoxCleanupSubtaskTermsCfg(ObservationGroupCfg):
+            # Separate lift thresholds keep the taller bin from starting with a true grasp signal.
+            grasp_left = ObservationTermCfg(
+                func=_object_lifted,
+                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.03},
+            )
+            grasp_right = ObservationTermCfg(
+                func=_object_lifted,
+                params={"object_cfg": SceneEntityCfg("object_2"), "min_height": BIN_POSITION[2] + 0.03},
+            )
+            concatenate_terms = False
+            enable_corruption = False
+
+        @configclass
+        class BoxCleanupObservationsCfg:
+            subtask_terms: BoxCleanupSubtaskTermsCfg = BoxCleanupSubtaskTermsCfg()
+
+        class BoxCleanupMimicEnv(GR1T2MimicEnv):
+            def get_subtask_term_signals(self, env_ids=None):
+                if env_ids is None:
+                    env_ids = slice(None)
+                terms = self.obs_buf["subtask_terms"]
+                return {name: terms[name][env_ids] for name in ("grasp_left", "grasp_right")}
 
         @configclass
         class BoxCleanupCameraCfg(GR1T2CameraCfg):
@@ -237,14 +295,21 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 return CompletionCriteria(**vars(self)).canonical_predicate_sequences
 
         class TwoArmBoxCleanupTask(GoalPoseTask):
+            def get_observation_cfg(self):
+                return BoxCleanupObservationsCfg()
+
             def get_termination_cfg(self) -> TaskTerminationCfg:
                 source_terminations = TerminationsCfg()
                 success = source_terminations.success.replace(
                     func=_object_near_target,
                     params={
-                        "task_link_name": "right_hand_roll_link",
                         "object_cfg": SceneEntityCfg("object"),
                         "target_cfg": SceneEntityCfg("object_2"),
+                        "max_xy_distance": cfg.success_max_xy_distance,
+                        "max_height_difference": cfg.success_max_height_difference,
+                        "max_speed": cfg.success_max_speed,
+                        "object_reference_offset": tuple(cfg.lid_reference_offset),
+                        "target_reference_offset": tuple(cfg.bin_reference_offset),
                     },
                 )
                 return TaskTerminationCfg(
@@ -282,6 +347,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
 
         embodiment = self.asset_registry.get_asset_by_name(cfg.embodiment)(enable_cameras=cfg.enable_cameras)
         embodiment.arm_mode = ArmMode.DUAL_ARM
+        embodiment.mimic_env = BoxCleanupMimicEnv
         embodiment.scene_config.robot = source_scene.robot.copy()
         # embodiment.scene_config.robot.init_state.joint_pos.update(
         #     {"right_elbow_pitch_joint": -2.260, "left_elbow_pitch_joint": -2.260}
