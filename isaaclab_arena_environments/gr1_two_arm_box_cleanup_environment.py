@@ -388,7 +388,10 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             )
         )
         embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
-        embodiment.camera_config = BoxCleanupCameraCfg(robot_pov_cam=source_scene.robot_pov_cam.copy())
+        robot_pov_cam = source_scene.robot_pov_cam.copy()
+        robot_pov_cam.height = 512
+        robot_pov_cam.width = 512
+        embodiment.camera_config = BoxCleanupCameraCfg(robot_pov_cam=robot_pov_cam)
         embodiment.observation_config.policy = combine_configclass_instances(
             "GR1TwoArmBoxCleanupPolicyCfg",
             embodiment.observation_config.policy,

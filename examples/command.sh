@@ -27,6 +27,8 @@ gr1_two_arm_pouring
 
 export TSAK_NAME=gr1_two_arm_box_cleanup
 
+export NUM_GENERATED_DEMOS=100
+
 export DATASET_DIR=datasets
 
 python submodules/IsaacLab/scripts/tools/record_demos.py \
@@ -65,7 +67,6 @@ python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_de
   --auto
 
 
-export NUM_GENERATED_DEMOS=100
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py \
   --device cpu \
   --generation_num_trials ${NUM_GENERATED_DEMOS} \
