@@ -277,8 +277,8 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             left_wrist_cam = CameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/left_hand_pitch_link/LeftWristCam",
                 update_period=0.0,
-                height=256,
-                width=256,
+                height=512,
+                width=512,
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.1, 2.0)),
                 offset=CameraCfg.OffsetCfg(
@@ -288,8 +288,8 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             right_wrist_cam = CameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/right_hand_pitch_link/RightWristCam",
                 update_period=0.0,
-                height=256,
-                width=256,
+                height=512,
+                width=512,
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.1, 2.0)),
                 offset=CameraCfg.OffsetCfg(

@@ -91,7 +91,7 @@ python submodules/IsaacLab/scripts/tools/replay_demos.py \
 
 python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
-  --hdf5_name datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
+  --hdf5_name ${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
   --language_instruction "Use both hands to bring the box lid close to the bin."
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
