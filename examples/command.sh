@@ -109,17 +109,15 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --max-steps 30000 \
   --num-gpus 1 \
   --save-steps 1000 \
-  --base-model-path nvidia/GR00T-N1.6-3B \
+  --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
   --no-tune-llm \
-  --tune-visual \
+  --no-tune-visual \
   --tune-projector \
   --tune-diffusion-model \
   --dataloader-num-workers 4 \
   --embodiment-tag GR1 \
   --color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
-  --save-total-limit 52
-
-  # --no-tune-visual \
+  --save-total-limit 2
 
 
 cd submodules/Isaac-GR00T
