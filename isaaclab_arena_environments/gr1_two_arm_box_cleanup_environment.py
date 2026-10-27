@@ -172,7 +172,13 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         """Build the custom task from stock GR1 configs without importing the custom Lab environment."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
-        from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
+        from isaaclab.envs.mimic_env_cfg import (
+            MimicEnvCfg,
+            SubTaskConfig,
+            SubTaskConstraintConfig,
+            SubTaskConstraintCoordinationScheme,
+            SubTaskConstraintType,
+        )
         from isaaclab.managers import ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
         from isaaclab.scene import InteractiveSceneCfg
         from isaaclab.sensors import CameraCfg
@@ -324,25 +330,40 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 mimic_cfg.datagen_config.name = "gr1_two_arm_box_cleanup_D0"
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(mimic_cfg.datagen_config, key, value)
-                for arm, pickup_name, destination_name in (("left", "object", "object_2"), ("right", "object_2", None)):
+                for arm in ("left", "right"):
                     mimic_cfg.subtask_configs[arm] = [
                         SubTaskConfig(
-                            object_ref=pickup_name,
+                            object_ref="object",
                             subtask_term_signal=f"grasp_{arm}",
+                            first_subtask_start_offset_range=(0, 0),
                             subtask_term_offset_range=(0, 0),
                             selection_strategy="nearest_neighbor_object",
                             selection_strategy_kwargs={"nn_k": 3},
                             action_noise=0.003,
+                            num_interpolation_steps=0,
+                            num_fixed_steps=0,
+                            apply_noise_during_interpolation=False,
                         ),
                         SubTaskConfig(
-                            object_ref=destination_name,
+                            object_ref="object_2",
                             subtask_term_signal=None,
                             subtask_term_offset_range=(0, 0),
-                            selection_strategy="nearest_neighbor_object" if destination_name is not None else "random",
-                            selection_strategy_kwargs={"nn_k": 3} if destination_name is not None else {},
+                            selection_strategy="nearest_neighbor_object",
+                            selection_strategy_kwargs={"nn_k": 3},
                             action_noise=0.003,
+                            num_interpolation_steps=3,
+                            num_fixed_steps=0,
+                            apply_noise_during_interpolation=False,
                         ),
                     ]
+                mimic_cfg.task_constraint_configs = [
+                    SubTaskConstraintConfig(
+                        eef_subtask_constraint_tuple=[("left", 0), ("right", 0)],
+                        constraint_type=SubTaskConstraintType.COORDINATION,
+                        coordination_scheme=SubTaskConstraintCoordinationScheme.TRANSFORM,
+                        coordination_synchronize_start=True,
+                    )
+                ]
                 return mimic_cfg
 
         embodiment = self.asset_registry.get_asset_by_name(cfg.embodiment)(enable_cameras=cfg.enable_cameras)
@@ -355,7 +376,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         embodiment.set_initial_pose(
             Pose(
                 position_xyz=tuple(source_scene.robot.init_state.pos),
-                rotation_xyzw=(0.0, 0.0, 0.7071068, 0.7071068),
+                rotation_xyzw=tuple(source_scene.robot.init_state.rot),
             )
         )
         embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
