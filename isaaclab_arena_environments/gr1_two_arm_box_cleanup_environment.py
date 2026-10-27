@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -218,13 +219,12 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         class TwoArmBoxCleanupTask(GoalPoseTask):
             def get_termination_cfg(self) -> TaskTerminationCfg:
                 source_terminations = TerminationsCfg()
-                success = source_terminations.success.replace(
-                    func=_object_near_target,
-                    params={
-                        "task_link_name": "right_hand_roll_link",
-                        "object_cfg": SceneEntityCfg("object"),
-                        "target_cfg": SceneEntityCfg("object_2"),
-                    },
+                # Keep manager config dataclasses out of Hydra's nested predicate sequences.
+                success = partial(
+                    _object_near_target,
+                    task_link_name="right_hand_roll_link",
+                    object_cfg=SceneEntityCfg("object"),
+                    target_cfg=SceneEntityCfg("object_2"),
                 )
                 return TaskTerminationCfg(
                     timeout_s=self.episode_length_s,
