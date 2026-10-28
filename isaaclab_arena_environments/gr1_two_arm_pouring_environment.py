@@ -32,7 +32,8 @@ BOWL_POSITION_XY = (0.10, 0.35)
 PAD_POSITION_XY = (0.30, 0.35)
 CUP_GRASP_MAX_DISTANCE = 0.10
 CUP_GRASP_MIN_LIFT = 0.03
-
+CUP_SCALE = (0.6, 0.6, 0.6)
+BALL_SCALE = (0.6, 0.6, 0.6)
 
 @dataclass
 class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
@@ -350,6 +351,12 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             "bowl": cfg.pouring_bowl_path,
             "pad": cfg.pouring_pad_path,
         }
+        asset_scales = {
+            "ball": BALL_SCALE,
+            "cup": CUP_SCALE,
+            "bowl": (1.0, 1.0, 1.0),
+            "pad": (1.0, 1.0, 1.0),
+        }
         bounds = {}
         contact_paths = {}
         for name, path in asset_paths.items():
@@ -358,7 +365,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             body = _pouring_collision_body(root)
             body_suffix = str(body.GetPath())[len(str(root.GetPath())) :]
             contact_paths[name] = f"{{ENV_REGEX_NS}}/{name.capitalize()}{body_suffix}"
-            box = compute_local_bounding_box_from_usd(path, (1.0, 1.0, 1.0))
+            box = compute_local_bounding_box_from_usd(path, asset_scales[name])
             bounds[name] = (box.min_point[0].tolist(), box.max_point[0].tolist())
         # Read actual USD extents rather than assuming the roots lie on the table surface.
         positions = {}
@@ -593,6 +600,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         pouring_assets = {}
         for name, path in asset_paths.items():
             addons = {"func": _spawn_pouring_object, "make_uninstanceable": True}
+            if name in ("cup", "ball"):
+                addons["scale"] = asset_scales[name]
             if name == "pad":
                 addons["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
             asset = Object(
