@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -32,7 +33,7 @@ BOWL_POSITION_XY = (0.10, 0.35)
 PAD_POSITION_XY = (0.30, 0.35)
 CUP_GRASP_MAX_DISTANCE = 0.10
 CUP_GRASP_MIN_LIFT = 0.03
-CUP_SCALE = (0.8, 0.8, 1.0)
+CUP_SCALE = (0.7, 0.7, 1.0)
 BALL_SCALE = (0.7, 0.7, 0.7)
 
 @dataclass
@@ -105,6 +106,32 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
                 child_paths.append(child.GetPath().pathString)
         raise RuntimeError(f"Could not find container_h20 below packing table(s). Descendants: {child_paths}")
     return table_prim
+
+
+def _spawn_pouring_robot(prim_path, cfg, translation=None, orientation=None, **kwargs):
+    """Strengthen articulated hand contacts and report finger bodies without colliders."""
+    import isaaclab.sim as sim_utils
+    from pxr import PhysxSchema, Usd, UsdPhysics
+
+    robot = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
+    stage = sim_utils.get_current_stage()
+    for path in sim_utils.find_matching_prim_paths(prim_path):
+        for prim in Usd.PrimRange(stage.GetPrimAtPath(path)):
+            if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+                articulation = PhysxSchema.PhysxArticulationAPI.Apply(prim)
+                articulation.CreateSolverPositionIterationCountAttr(32)
+                articulation.CreateSolverVelocityIterationCountAttr(8)
+            if not prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                continue
+            if not re.search(r"[LR]_(index|middle|ring|pinky|thumb).*_link$", prim.GetName()):
+                continue
+            PhysxSchema.PhysxRigidBodyAPI.Apply(prim).CreateEnableSpeculativeCCDAttr(True)
+            colliders = [child for child in Usd.PrimRange(prim) if child.HasAPI(UsdPhysics.CollisionAPI)]
+            if not colliders:
+                print(f"[WARN] Pouring finger body has no collider: {prim.GetPath()}")
+            for collider in colliders:
+                UsdPhysics.CollisionAPI(collider).CreateCollisionEnabledAttr(True)
+    return robot
 
 
 def _pouring_collision_body(root):
@@ -287,12 +314,14 @@ def _pouring_complete(
 def _configure_two_arm_pouring(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
 ) -> IsaacLabArenaManagerBasedRLEnvCfg:
-    """Apply 50 Hz control, glove feedback, and camera recording settings."""
-    from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import set_control_rate_50hz
+    """Apply 400 Hz physics while preserving 50 Hz control, glove feedback, and recording settings."""
     from isaaclab_arena_environments.gr1_pick_place_environment import _configure_gr1_pick_place
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
-    env_cfg = set_control_rate_50hz(env_cfg)
+    # Resolve sustained finger contacts more often without changing the control or rendering rates.
+    env_cfg.sim.dt = 1 / 400
+    env_cfg.decimation = 8
+    env_cfg.sim.render_interval = 4
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
     return env_cfg
@@ -566,6 +595,9 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         embodiment.arm_mode = ArmMode.DUAL_ARM
         embodiment.mimic_env = PouringMimicEnv
         embodiment.scene_config.robot = source_scene.robot.copy()
+        embodiment.scene_config.robot.spawn = embodiment.scene_config.robot.spawn.replace(
+            func=_spawn_pouring_robot, make_uninstanceable=True
+        )
         # The source robot faces +Y. XR forward maps to +Y with an identity anchor;
         # FOLLOW_PRIM_SMOOTHED follows only pelvis yaw changes, not its initial yaw.
         embodiment.xr.anchor_rot = (0.0, 0.0, 0.0, 1.0)
@@ -610,8 +642,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                     rigid_body_enabled=True,
                     kinematic_enabled=name == "pad",
                     disable_gravity=False,
-                    solver_position_iteration_count=16,
-                    solver_velocity_iteration_count=4,
+                    solver_position_iteration_count=32,
+                    solver_velocity_iteration_count=8,
                 ),
                 "collision_props": sim_utils.CollisionPropertiesCfg(
                     collision_enabled=True, contact_offset=0.002, rest_offset=0.0
