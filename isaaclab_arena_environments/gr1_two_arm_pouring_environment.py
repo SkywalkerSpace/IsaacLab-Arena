@@ -164,7 +164,7 @@ def _randomize_pouring_layout(
     positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
 ) -> None:
-    """Jitter cup, bowl, and pad independently by ±5 cm in XY, keeping the ball inside the cup."""
+    """Jitter cup and bowl independently by ±5 cm in XY, keeping the ball in the cup and the pad fixed."""
     import secrets
     import torch
 
@@ -180,18 +180,16 @@ def _randomize_pouring_layout(
         print(f"[INFO] Two-arm pouring layout randomization seed: {seed}")
     # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
     offsets = (
-        torch.rand((len(env_ids), 3, 2), device=env.device, generator=env._pouring_rng) * 2.0 - 1.0
+        torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._pouring_rng) * 2.0 - 1.0
     ) * POSITION_XY_RANDOM_MAX
-    for name, offset_index in (("cup", 0), ("ball", 0), ("bowl", 1), ("pad", 2)):
+    for name, offset_index in (("cup", 0), ("ball", 0), ("bowl", 1)):
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
         pose[:, :2] += offsets[:, offset_index]
         pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
         asset = env.scene[name]
         asset.write_root_pose_to_sim(pose, env_ids=env_ids)
-        # PhysX forbids velocity writes to the kinematic pad, including zero velocities.
-        if name != "pad":
-            asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
+        asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
 
 
 def _pouring_object_dropped(env: ManagerBasedRLEnv, object_name: str, minimum_height: float = 0.5) -> torch.Tensor:
@@ -395,7 +393,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
 
         @configclass
         class PouringEventsCfg:
-            # The layout event resets every prop; a scene-wide reset would write pad velocities.
+            # The layout event resets dynamic props; leave the kinematic pad at its initial pose.
             reset_all = EventTermCfg(
                 func=mdp.reset_root_state_uniform,
                 mode="reset",
@@ -624,8 +622,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         task.task_description = (
             "Grasp the cup containing the ball with the left hand. Pour the ball into the bowl, "
             "then place the bowl on the pad with the ball still inside. "
-            "The cup, bowl, and pad independently move by up to 5 cm along each XY axis at reset; "
-            "the ball moves with the cup so that it starts inside."
+            "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
+            "the ball moves with the cup so that it starts inside, while the pad remains fixed."
         )
         task.scene_config = PouringSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         task.scene_config.ball_bowl_contact = ContactSensorCfg(
