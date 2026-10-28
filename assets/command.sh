@@ -25,7 +25,9 @@ gr1_two_arm_pouring
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
-export TSAK_NAME=
+export TSAK_NAME=gr1_two_arm_can_sort_random
+
+export LANGUAGE_INSTRUCTION="Grasp the can then place that can inside the box of the same color."
 
 export NUM_GENERATED_DEMOS=100
 
@@ -94,7 +96,7 @@ python submodules/IsaacLab/scripts/tools/replay_demos.py \
 python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
   --hdf5_name ${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
-  --language_instruction "Use both hands to bring the box lid close to the bin."
+  --language_instruction "${LANGUAGE_INSTRUCTION}"
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
@@ -103,7 +105,7 @@ cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
-  --output-dir ../../models/ \
+  --output-dir ../../models/${TSAK_NAME}/ \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
   --global-batch-size 16 \
   --max-steps 30000 \
@@ -130,14 +132,11 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
   --device cuda --host 127.0.0.1 --port 5555
 
 
-
 cd IsaacLab-Arena
-
-export TSAK_NAME=gr1_two_arm_box_cleanup
 
 CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
-  --language_instruction "Use both hands to bring the box lid close to the bin." \
+  --language_instruction "${LANGUAGE_INSTRUCTION}" \
   --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_two_arm_config.yaml \
   --viz none \
   --remote_host 127.0.0.1 \
