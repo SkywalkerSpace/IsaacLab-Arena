@@ -27,10 +27,10 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 POSITION_XY_RANDOM_MAX = 0.05
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.002
-COFFEE_POD_POSITION_XY = (-0.15, 0.35)
-COFFEE_MACHINE_POSITION_XY = (0.20, 0.40)
+COFFEE_POD_POSITION_XY = (-0.2, 0.35)
+COFFEE_MACHINE_POSITION_XY = (0.10, 0.40)
 COFFEE_MACHINE_ROTATION_XYZW = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
-COFFEE_POD_GRASP_MAX_DISTANCE = 0.10
+COFFEE_POD_GRASP_MAX_DISTANCE = 0.05
 COFFEE_POD_GRASP_MIN_LIFT = 0.03
 
 
@@ -45,12 +45,8 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     coffee_machine_path: str = str(_ASSET_DIR / "coffee_machine.usd")
     coffee_pod_path: str = str(_ASSET_DIR / "coffee_pod.usd")
-    success_max_xy_distance: float = 0.005
-    """Maximum pod-center offset from the pod holder's local XY center, in meters."""
-    success_max_height_difference: float = 0.002
-    """Tolerance for pod containment within the holder's vertical bounds, in meters."""
-    success_max_speed: float = 0.20
-    """Componentwise pod velocity limits in m/s (linear) and rad/s (angular)."""
+    success_max_distance: float = 0.05
+    """Maximum distance from the pod center to the lid's local bounding box, in meters."""
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
@@ -62,13 +58,9 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
                 f"Two-arm coffee requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
                 f"got {self.embodiment!r}."
             )
-        for name in (
-            "success_max_xy_distance",
-            "success_max_height_difference",
-            "success_max_speed",
-        ):
-            value = getattr(self, name)
-            assert math.isfinite(value) and value > 0, f"{name} must be finite and positive"
+        assert math.isfinite(self.success_max_distance) and self.success_max_distance > 0, (
+            "success_max_distance must be finite and positive"
+        )
 
 
 def _spawn_packing_table_without_container(prim_path, cfg, translation=None, orientation=None, **kwargs):
@@ -199,50 +191,32 @@ def _coffee_pod_near_left_palm(env: ManagerBasedRLEnv, min_height: float) -> tor
     return lifted & (torch.linalg.vector_norm(coffee_pod_pos - palm_pos, dim=1) < COFFEE_POD_GRASP_MAX_DISTANCE)
 
 
-def _coffee_pod_in_machine(
+def _coffee_pod_near_lid(
     env: ManagerBasedRLEnv,
     pod_center_offset: tuple[float, float, float],
-    pod_half_height: float,
-    holder_center_xy: tuple[float, float],
-    holder_min_height: float,
-    holder_max_height: float,
-    max_xy_distance: float,
-    max_height_difference: float,
-    max_speed: float,
+    lid_body_name: str,
+    lid_min: tuple[float, float, float],
+    lid_max: tuple[float, float, float],
+    max_distance: float,
 ) -> torch.Tensor:
-    """Require the upright, slow coffee pod inside and touching the machine's pod holder."""
+    """Detect the pod center near the moving lid's local bounding box."""
     import torch
 
-    from isaaclab.managers import SceneEntityCfg
     from isaaclab.utils.math import quat_apply, quat_apply_inverse
-
-    from isaaclab_arena.tasks.predicates.spatial import object_in_contact_with_target
 
     coffee_pod = env.scene["coffee_pod"]
     coffee_machine = env.scene["coffee_machine"]
-    # W is world; M/P are the coffee-machine/pod root frames.
-    q_W_M = coffee_machine.data.root_quat_w.torch
+    lid_index = coffee_machine.data.body_names.index(lid_body_name)
+    # W is world; L/P are the lid-link/pod root frames.
+    q_W_L = coffee_machine.data.body_quat_w.torch[:, lid_index]
+    p_W_L = coffee_machine.data.body_pos_w.torch[:, lid_index]
     q_W_P = coffee_pod.data.root_quat_w.torch
     p_W_P = coffee_pod.data.root_pos_w.torch
     center_P = p_W_P.new_tensor(pod_center_offset).expand_as(p_W_P)
     p_W_center = p_W_P + quat_apply(q_W_P, center_P)
-    p_M_center = quat_apply_inverse(q_W_M, p_W_center - coffee_machine.data.root_pos_w.torch)
-    up = p_W_P.new_tensor((0.0, 0.0, 1.0)).expand_as(p_W_P)
-    upright = (quat_apply(q_W_M, up)[:, 2] > 0.95) & (quat_apply(q_W_P, up)[:, 2] > 0.95)
-    touching_machine = object_in_contact_with_target(
-        env, SceneEntityCfg("coffee_pod_machine_contact"), force_threshold=0.001
-    )
-    return (
-        upright
-        & touching_machine
-        & (
-            torch.linalg.vector_norm(p_M_center[:, :2] - p_M_center.new_tensor(holder_center_xy), dim=1)
-            < max_xy_distance
-        )
-        & (p_M_center[:, 2] - pod_half_height >= holder_min_height - max_height_difference)
-        & (p_M_center[:, 2] + pod_half_height <= holder_max_height + max_height_difference)
-        & torch.all(torch.abs(coffee_pod.data.root_vel_w.torch) < max_speed, dim=1)
-    )
+    p_L_center = quat_apply_inverse(q_W_L, p_W_center - p_W_L)
+    closest_L = torch.clamp(p_L_center, min=p_L_center.new_tensor(lid_min), max=p_L_center.new_tensor(lid_max))
+    return torch.linalg.vector_norm(p_L_center - closest_L, dim=1) < max_distance
 
 
 def _configure_two_arm_coffee(
@@ -261,7 +235,7 @@ def _configure_two_arm_coffee(
 
 @register_environment
 class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironmentCfg]):
-    """Pick up the coffee pod with the left hand and insert it into the coffee machine."""
+    """Pick up the coffee pod with the left hand and bring it near the coffee machine's lid."""
 
     name = "gr1_two_arm_coffee"
     _legacy_argparse_cfg_type = GR1TwoArmCoffeeEnvironmentCfg
@@ -278,7 +252,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         )
 
     def build(self, cfg: GR1TwoArmCoffeeEnvironmentCfg) -> IsaacLabArenaEnvironment:
-        """Build the coffee-pod insertion task from stock GR1 configs and two coffee USD assets."""
+        """Build the coffee-pod approach task from stock GR1 configs and two coffee USD assets."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
         from isaaclab.actuators import ImplicitActuatorCfg
@@ -291,10 +265,10 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             TerminationTermCfg,
         )
         from isaaclab.scene import InteractiveSceneCfg
-        from isaaclab.sensors import CameraCfg, ContactSensorCfg
+        from isaaclab.sensors import CameraCfg
         from isaaclab.utils.configclass import configclass
         from isaaclab_tasks.contrib.pick_place.pickplace_gr1t2_env_cfg import PickPlaceGR1T2SceneCfg
-        from pxr import Usd, UsdPhysics
+        from pxr import Usd, UsdGeom, UsdPhysics
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
@@ -345,34 +319,23 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             if prim.HasAPI(UsdPhysics.RigidBodyAPI):
                 relative_path = prim.GetPath().MakeRelativePath(machine_root.GetPath())
                 machine_contact_paths.append(f"{contact_paths['coffee_machine']}/{relative_path}")
-        holder_prims = []
-        for prim in Usd.PrimRange(machine_stage.GetDefaultPrim(), Usd.TraverseInstanceProxies()):
-            name = prim.GetName().casefold()
-            if name in ("pod_holder", "pod_holder_root", "pod_holder_main") or name.endswith(
-                ("_pod_holder", "_pod_holder_root", "_pod_holder_main")
-            ):
-                holder_prims.append(prim)
-        assert len(holder_prims) == 1, "Coffee machine must contain one identifiable pod_holder prim"
-        holder_box = compute_local_bounding_box_from_usd(
-            cfg.coffee_machine_path, prim_path=str(holder_prims[0].GetPath())
-        )
-        holder_min = holder_box.min_point[0].tolist()
-        holder_max = holder_box.max_point[0].tolist()
+        lid_prim = machine_stage.GetPrimAtPath(lid_targets[0])
+        assert lid_prim.HasAPI(UsdPhysics.RigidBodyAPI), "Lid hinge must target a rigid body"
+        # Exclude the link's authored pose: the predicate uses its live articulation pose.
+        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), includedPurposes=[UsdGeom.Tokens.default_])
+        lid_box = bbox_cache.ComputeUntransformedBound(lid_prim).ComputeAlignedBox()
+        assert not lid_box.IsEmpty(), "Coffee machine lid must have nonempty geometry bounds"
         pod_min, pod_max = bounds["coffee_pod"]
-        coffee_pod_in_machine_params = {
+        coffee_pod_near_lid_params = {
             "pod_center_offset": tuple((low + high) / 2.0 for low, high in zip(pod_min, pod_max)),
-            "pod_half_height": (pod_max[2] - pod_min[2]) / 2.0,
-            "holder_center_xy": tuple((holder_min[index] + holder_max[index]) / 2.0 for index in range(2)),
-            "holder_min_height": holder_min[2],
-            "holder_max_height": holder_max[2],
-            "max_xy_distance": cfg.success_max_xy_distance,
-            "max_height_difference": cfg.success_max_height_difference,
-            "max_speed": cfg.success_max_speed,
+            "lid_body_name": lid_prim.GetName(),
+            "lid_min": tuple(lid_box.GetMin()),
+            "lid_max": tuple(lid_box.GetMax()),
+            "max_distance": cfg.success_max_distance,
         }
 
         @configclass
         class CoffeeSceneCfg(InteractiveSceneCfg):
-            coffee_pod_machine_contact: ContactSensorCfg | None = None
             left_hand_contact = source_scene.left_hand_contact.replace(
                 filter_prim_paths_expr=["{ENV_REGEX_NS}/Coffee_pod", "{ENV_REGEX_NS}/Coffee_machine"]
             )
@@ -489,11 +452,11 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
                     timeout_s=self.episode_length_s,
                     success=[
                         CoffeeCompletionCriteria(
-                            name="coffee_pod_in_machine",
+                            name="coffee_pod_near_lid",
                             predicate_sequence=[
                                 TerminationTermCfg(
-                                    func=_coffee_pod_in_machine,
-                                    params=coffee_pod_in_machine_params,
+                                    func=_coffee_pod_near_lid,
+                                    params=coffee_pod_near_lid_params,
                                 )
                             ],
                         )
@@ -512,7 +475,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
                 mimic_cfg.datagen_config.name = "gr1_two_arm_coffee_D0"
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(mimic_cfg.datagen_config, key, value)
-                # Split at the left-hand grasp, then adapt insertion to the randomized machine pose.
+                # Split at the left-hand grasp, then adapt the approach to the randomized machine pose.
                 object_refs = {
                     "left": ("coffee_pod", "coffee_machine"),
                     "right": ("coffee_machine", "coffee_machine"),
@@ -620,15 +583,12 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         scene = Scene(assets=[table, *coffee_assets.values(), ground, light])
         task = TwoArmCoffeeTask(object=coffee_assets["coffee_pod"], episode_length_s=cfg.episode_length_s)
         task.task_description = (
-            "Pick up the coffee_pod with the left hand and insert it into the coffee_machine's pod holder. "
-            "The task succeeds when the pod is inside the holder and resting in contact with the machine. "
+            "Pick up the coffee_pod with the left hand and bring it near the coffee_machine's upper lid. "
+            "The task succeeds when the pod center is within the configured distance of the moving lid's bounds. "
             "The coffee_pod and coffee_machine independently move by up to 5 cm along each XY axis at reset; "
             "the machine base remains fixed during the episode, with a passive hinged lid initially open."
         )
         task.scene_config = CoffeeSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
-        task.scene_config.coffee_pod_machine_contact = ContactSensorCfg(
-            prim_path=contact_paths["coffee_pod"], filter_prim_paths_expr=machine_contact_paths
-        )
         coffee_contact_paths = [contact_paths["coffee_pod"], *machine_contact_paths]
         task.scene_config.left_hand_contact.filter_prim_paths_expr = coffee_contact_paths
         task.scene_config.right_hand_contact.filter_prim_paths_expr = list(coffee_contact_paths)
