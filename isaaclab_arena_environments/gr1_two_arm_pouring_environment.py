@@ -55,7 +55,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     """Maximum bowl-to-pad center distance in the pad's local XY plane, in meters."""
     success_max_height_difference: float = 0.015
     """Tolerance between the bowl bottom and pad top, in meters."""
-    success_max_speed: float = 0.20
+    success_max_speed: float = 0.90
     """Componentwise ball and bowl velocity limits in m/s (linear) and rad/s (angular)."""
 
     def __post_init__(self) -> None:

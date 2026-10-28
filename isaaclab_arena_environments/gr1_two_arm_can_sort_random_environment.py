@@ -53,7 +53,7 @@ class GR1TwoArmCanSortRandomEnvironmentCfg(ArenaEnvironmentCfg):
     can_sort_red_can_path: str = str(_ASSET_DIR / "can_sort_red_can.usd")
     success_max_xy_distance: float = 0.10
     success_max_height_difference: float = 0.08
-    success_max_speed: float = 0.20
+    success_max_speed: float = 0.90
     """Componentwise can velocity limits in m/s (linear) and rad/s (angular)."""
     can_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """Success reference point in the can's root frame, in meters."""
