@@ -23,13 +23,13 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import IsaacLabArenaManagerBasedRLEnvCfg
 
 
-_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf2usd"
+_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 POSITION_XY_RANDOM_MAX = 0.05
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.002
 CUP_POSITION_XY = (-0.15, 0.40)
-BOWL_POSITION_XY = (0.10, 0.30)
-PAD_POSITION_XY = (0.30, 0.30)
+BOWL_POSITION_XY = (0.10, 0.35)
+PAD_POSITION_XY = (0.30, 0.35)
 CUP_GRASP_MAX_DISTANCE = 0.10
 CUP_GRASP_MIN_LIFT = 0.03
 

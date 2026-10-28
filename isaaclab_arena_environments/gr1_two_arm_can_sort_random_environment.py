@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import IsaacLabArenaManagerBasedRLEnvCfg
 
 
-_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf2usd"
+_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 HANDOFF_MAX_DISTANCE = 0.05
 POSITION_XY_RANDOM_MAX = 0.05
 BOX_CLOCKWISE_90_ROTATION_XYZW = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))

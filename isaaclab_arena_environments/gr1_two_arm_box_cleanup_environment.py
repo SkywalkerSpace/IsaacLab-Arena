@@ -24,7 +24,7 @@ if TYPE_CHECKING:
     from isaaclab_arena.environments.isaaclab_arena_manager_based_env_cfg import IsaacLabArenaManagerBasedRLEnvCfg
 
 
-_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "mjcf2usd"
+_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 LID_POSITION = (-0.05, 0.30, 1.01)
 BIN_POSITION = (0.05, 0.55, 1.07)
 LID_SCALE = (0.8, 0.8, 0.8)
