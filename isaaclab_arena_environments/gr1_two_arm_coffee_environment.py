@@ -27,8 +27,9 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 POSITION_XY_RANDOM_MAX = 0.05
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.002
-COFFEE_POD_POSITION_XY = (-0.15, 0.40)
-COFFEE_MACHINE_POSITION_XY = (0.10, 0.35)
+COFFEE_POD_POSITION_XY = (-0.15, 0.35)
+COFFEE_MACHINE_POSITION_XY = (0.20, 0.40)
+COFFEE_MACHINE_ROTATION_XYZW = (0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4))
 COFFEE_POD_GRASP_MAX_DISTANCE = 0.10
 COFFEE_POD_GRASP_MIN_LIFT = 0.03
 
@@ -101,39 +102,13 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
 
 
 def _normalize_coffee_object(root):
-    """Merge imported links into one root rigid body, fixing the machine lid open for insertion."""
-    from pxr import Gf, Usd, UsdGeom, UsdPhysics
+    """Merge the coffee pod's fixed links into one root rigid body."""
+    from pxr import Usd, UsdPhysics
 
     prims = list(Usd.PrimRange(root))
     joints = [prim for prim in prims if prim.IsA(UsdPhysics.Joint)]
     for prim in joints:
-        if prim.IsA(UsdPhysics.RevoluteJoint):
-            joint = UsdPhysics.RevoluteJoint(prim)
-            targets = joint.GetBody1Rel().GetTargets()
-            assert len(targets) == 1 and "lid" in str(targets[0]).casefold(), (
-                f"Only a coffee-machine lid hinge is supported: {prim.GetPath()}"
-            )
-            lid = root.GetStage().GetPrimAtPath(targets[0])
-            pivot = Gf.Vec3d(joint.GetLocalPos1Attr().Get())
-            joint_rotation = Gf.Quatd(joint.GetLocalRot1Attr().Get())
-            axis = {"X": Gf.Vec3d(1, 0, 0), "Y": Gf.Vec3d(0, 1, 0), "Z": Gf.Vec3d(0, 0, 1)}[
-                joint.GetAxisAttr().Get()
-            ]
-            axis = Gf.Rotation(joint_rotation).TransformDir(axis)
-            upper_limit = joint.GetUpperLimitAttr().Get()
-            angle = min(120.0, upper_limit) if math.isfinite(upper_limit) else 120.0
-            xform = UsdGeom.Xformable(lid)
-            local_transform = xform.GetLocalTransformation()
-            opened_transform = (
-                Gf.Matrix4d().SetTranslate(-pivot)
-                * Gf.Matrix4d().SetRotate(Gf.Rotation(axis, angle))
-                * Gf.Matrix4d().SetTranslate(pivot)
-                * local_transform
-            )
-            xform.ClearXformOpOrder()
-            xform.AddTransformOp(opSuffix="coffee_lid_open").Set(opened_transform)
-        else:
-            assert prim.IsA(UsdPhysics.FixedJoint), f"Unsupported coffee joint: {prim.GetPath()}"
+        assert prim.IsA(UsdPhysics.FixedJoint), f"Cannot merge a movable coffee joint: {prim.GetPath()}"
         prim.SetActive(False)
     for prim in prims:
         if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
@@ -147,7 +122,7 @@ def _normalize_coffee_object(root):
 
 
 def _spawn_coffee_object(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Spawn converted MJCF props as single rigid bodies without modifying the source USD."""
+    """Spawn the converted MJCF pod as a single rigid body without changing its source USD."""
     import isaaclab.sim as sim_utils
 
     prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
@@ -191,9 +166,19 @@ def _randomize_coffee_layout(
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
         pose[:, :2] += offsets[:, offset_index]
         pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
+        if name == "coffee_machine":
+            pose[:, 3:7] = pose.new_tensor(COFFEE_MACHINE_ROTATION_XYZW)
         asset = env.scene[name]
         asset.write_root_pose_to_sim(pose, env_ids=env_ids)
-        asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
+        if name == "coffee_machine":
+            # The fixed articulation base has no velocity; reset its movable lid instead.
+            asset.write_joint_state_to_sim(
+                asset.data.default_joint_pos.torch[env_ids].clone(),
+                asset.data.default_joint_vel.torch[env_ids].clone(),
+                env_ids=env_ids,
+            )
+        else:
+            asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
 
 
 def _coffee_object_dropped(env: ManagerBasedRLEnv, object_name: str, minimum_height: float = 0.5) -> torch.Tensor:
@@ -296,6 +281,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         """Build the coffee-pod insertion task from stock GR1 configs and two coffee USD assets."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
+        from isaaclab.actuators import ImplicitActuatorCfg
         from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
         from isaaclab.managers import (
             EventTermCfg,
@@ -308,7 +294,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         from isaaclab.sensors import CameraCfg, ContactSensorCfg
         from isaaclab.utils.configclass import configclass
         from isaaclab_tasks.contrib.pick_place.pickplace_gr1t2_env_cfg import PickPlaceGR1T2SceneCfg
-        from pxr import Usd
+        from pxr import Usd, UsdPhysics
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
@@ -343,6 +329,22 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         ):
             positions[name] = (*xy, TABLE_SURFACE_HEIGHT + SPAWN_CLEARANCE - bounds[name][0][2])
         machine_stage = Usd.Stage.Open(cfg.coffee_machine_path)
+        machine_root = machine_stage.GetDefaultPrim()
+        lid_joints = [
+            UsdPhysics.RevoluteJoint(prim)
+            for prim in Usd.PrimRange(machine_root)
+            if prim.IsA(UsdPhysics.RevoluteJoint)
+        ]
+        assert len(lid_joints) == 1, "Coffee machine must contain one lid hinge"
+        lid_joint = lid_joints[0]
+        lid_targets = lid_joint.GetBody1Rel().GetTargets()
+        assert len(lid_targets) == 1 and "lid" in str(lid_targets[0]).casefold(), "Expected a lid hinge"
+        lid_open_angle = math.radians(min(120.0, lid_joint.GetUpperLimitAttr().Get()))
+        machine_contact_paths = []
+        for prim in Usd.PrimRange(machine_root):
+            if prim.HasAPI(UsdPhysics.RigidBodyAPI):
+                relative_path = prim.GetPath().MakeRelativePath(machine_root.GetPath())
+                machine_contact_paths.append(f"{contact_paths['coffee_machine']}/{relative_path}")
         holder_prims = []
         for prim in Usd.PrimRange(machine_stage.GetDefaultPrim(), Usd.TraverseInstanceProxies()):
             name = prim.GetName().casefold()
@@ -380,7 +382,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
 
         @configclass
         class CoffeeEventsCfg:
-            # The layout event resets both the dynamic pod and the kinematic coffee machine.
+            # The layout event resets the dynamic pod and the fixed-base machine articulation.
             reset_all = EventTermCfg(
                 func=mdp.reset_root_state_uniform,
                 mode="reset",
@@ -575,17 +577,32 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         )
         coffee_assets = {}
         for name, path in asset_paths.items():
-            addons = {"func": _spawn_coffee_object, "make_uninstanceable": True}
-            if name == "coffee_machine":
-                addons["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
+            is_machine = name == "coffee_machine"
+            addons = {"make_uninstanceable": True}
+            if is_machine:
+                # Preserve the imported hinge; only the articulation base is fixed to the world.
+                addons["fix_root_link"] = True
+                addons["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=False)
+            else:
+                addons["func"] = _spawn_coffee_object
             asset = Object(
                 name=name,
                 prim_path=f"{{ENV_REGEX_NS}}/{name.capitalize()}",
-                object_type=ObjectType.RIGID,
+                object_type=ObjectType.ARTICULATION if is_machine else ObjectType.RIGID,
                 usd_path=path,
                 spawn_cfg_addon=addons,
-                initial_pose=Pose(position_xyz=positions[name]),
+                initial_pose=Pose(
+                    position_xyz=positions[name],
+                    rotation_xyzw=COFFEE_MACHINE_ROTATION_XYZW if is_machine else (0.0, 0.0, 0.0, 1.0),
+                ),
             )
+            if is_machine:
+                asset.object_cfg.init_state.joint_pos = {lid_joint.GetPrim().GetName(): lid_open_angle}
+                asset.object_cfg.actuators = {
+                    "lid": ImplicitActuatorCfg(
+                        joint_names_expr=[lid_joint.GetPrim().GetName()], stiffness=0.0, damping=0.005
+                    )
+                }
             asset.disable_reset_pose()
             coffee_assets[name] = asset
         ground = Object(
@@ -606,13 +623,13 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             "Pick up the coffee_pod with the left hand and insert it into the coffee_machine's pod holder. "
             "The task succeeds when the pod is inside the holder and resting in contact with the machine. "
             "The coffee_pod and coffee_machine independently move by up to 5 cm along each XY axis at reset; "
-            "the machine remains fixed during the episode, with its lid held open."
+            "the machine base remains fixed during the episode, with a passive hinged lid initially open."
         )
         task.scene_config = CoffeeSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         task.scene_config.coffee_pod_machine_contact = ContactSensorCfg(
-            prim_path=contact_paths["coffee_pod"], filter_prim_paths_expr=[contact_paths["coffee_machine"]]
+            prim_path=contact_paths["coffee_pod"], filter_prim_paths_expr=machine_contact_paths
         )
-        coffee_contact_paths = [contact_paths[name] for name in ("coffee_pod", "coffee_machine")]
+        coffee_contact_paths = [contact_paths["coffee_pod"], *machine_contact_paths]
         task.scene_config.left_hand_contact.filter_prim_paths_expr = coffee_contact_paths
         task.scene_config.right_hand_contact.filter_prim_paths_expr = list(coffee_contact_paths)
         task.events_cfg = CoffeeEventsCfg()
