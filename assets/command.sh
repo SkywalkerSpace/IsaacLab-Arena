@@ -25,7 +25,7 @@ gr1_two_arm_pouring
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
-export TSAK_NAME=gr1_two_arm_box_cleanup
+export TSAK_NAME=
 
 export NUM_GENERATED_DEMOS=100
 

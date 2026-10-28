@@ -149,13 +149,17 @@ def _normalize_pouring_object(root):
 
 
 def _spawn_pouring_object(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Spawn converted MJCF props as single rigid bodies without modifying the source USD."""
+    """Spawn pouring props as single rigid bodies with speculative continuous collision detection."""
     import isaaclab.sim as sim_utils
+    from pxr import PhysxSchema, UsdPhysics
 
     prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
     stage = sim_utils.get_current_stage()
     for path in sim_utils.find_matching_prim_paths(prim_path):
-        _normalize_pouring_object(stage.GetPrimAtPath(path))
+        body = _normalize_pouring_object(stage.GetPrimAtPath(path))
+        if not UsdPhysics.RigidBodyAPI(body).GetKinematicEnabledAttr().Get():
+            # Speculative CCD also covers angular motion and does not require scene-level swept CCD.
+            PhysxSchema.PhysxRigidBodyAPI.Apply(body).CreateEnableSpeculativeCCDAttr(True)
     return prim
 
 
@@ -599,11 +603,22 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         )
         pouring_assets = {}
         for name, path in asset_paths.items():
-            addons = {"func": _spawn_pouring_object, "make_uninstanceable": True}
+            addons = {
+                "func": _spawn_pouring_object,
+                "make_uninstanceable": True,
+                "rigid_props": sim_utils.RigidBodyPropertiesCfg(
+                    rigid_body_enabled=True,
+                    kinematic_enabled=name == "pad",
+                    disable_gravity=False,
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=4,
+                ),
+                "collision_props": sim_utils.CollisionPropertiesCfg(
+                    collision_enabled=True, contact_offset=0.002, rest_offset=0.0
+                ),
+            }
             if name in ("cup", "ball"):
                 addons["scale"] = asset_scales[name]
-            if name == "pad":
-                addons["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
             asset = Object(
                 name=name,
                 prim_path=f"{{ENV_REGEX_NS}}/{name.capitalize()}",
