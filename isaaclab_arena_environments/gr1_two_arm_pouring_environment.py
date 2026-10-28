@@ -106,6 +106,58 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
     return table_prim
 
 
+def _pouring_collision_body(root):
+    """Find the sole rigid body owning collision geometry, ignoring empty imported links."""
+    from pxr import Usd, UsdPhysics
+
+    bodies = {}
+    for prim in Usd.PrimRange(root, Usd.TraverseInstanceProxies()):
+        if not prim.HasAPI(UsdPhysics.CollisionAPI):
+            continue
+        owner = prim
+        while owner and owner.GetPath().HasPrefix(root.GetPath()):
+            if owner.HasAPI(UsdPhysics.RigidBodyAPI):
+                bodies[str(owner.GetPath())] = owner
+                break
+            owner = owner.GetParent()
+    assert len(bodies) == 1, (
+        f"Pouring assets require one collision-bearing rigid body under {root.GetPath()}; found {list(bodies)}"
+    )
+    return next(iter(bodies.values()))
+
+
+def _normalize_pouring_object(root):
+    """Remove empty URDF links and fixed joints from a single-body pouring prop."""
+    from pxr import Usd, UsdPhysics
+
+    body = _pouring_collision_body(root)
+    prims = list(Usd.PrimRange(root))
+    joints = [prim for prim in prims if prim.IsA(UsdPhysics.Joint)]
+    assert all(prim.IsA(UsdPhysics.FixedJoint) for prim in joints), (
+        f"Pouring props must not contain movable joints: {root.GetPath()}"
+    )
+    for prim in joints:
+        prim.SetActive(False)
+    for prim in prims:
+        if prim.HasAPI(UsdPhysics.ArticulationRootAPI):
+            prim.RemoveAPI(UsdPhysics.ArticulationRootAPI)
+        if prim != body and prim.HasAPI(UsdPhysics.RigidBodyAPI):
+            prim.RemoveAPI(UsdPhysics.RigidBodyAPI)
+            prim.RemoveAPI(UsdPhysics.MassAPI)
+    return body
+
+
+def _spawn_pouring_object(prim_path, cfg, translation=None, orientation=None, **kwargs):
+    """Spawn converted MJCF props as single rigid bodies without modifying the source USD."""
+    import isaaclab.sim as sim_utils
+
+    prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
+    stage = sim_utils.get_current_stage()
+    for path in sim_utils.find_matching_prim_paths(prim_path):
+        _normalize_pouring_object(stage.GetPrimAtPath(path))
+    return prim
+
+
 def _randomize_pouring_layout(
     env: ManagerBasedRLEnv,
     env_ids: torch.Tensor | None,
@@ -275,6 +327,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         from isaaclab.sensors import CameraCfg, ContactSensorCfg
         from isaaclab.utils.configclass import configclass
         from isaaclab_tasks.contrib.pick_place.pickplace_gr1t2_env_cfg import PickPlaceGR1T2SceneCfg
+        from pxr import Usd
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
@@ -298,7 +351,13 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             "pad": cfg.pouring_pad_path,
         }
         bounds = {}
+        contact_paths = {}
         for name, path in asset_paths.items():
+            stage = Usd.Stage.Open(path)
+            root = stage.GetDefaultPrim()
+            body = _pouring_collision_body(root)
+            body_suffix = str(body.GetPath())[len(str(root.GetPath())) :]
+            contact_paths[name] = f"{{ENV_REGEX_NS}}/{name.capitalize()}{body_suffix}"
             box = compute_local_bounding_box_from_usd(path, (1.0, 1.0, 1.0))
             bounds[name] = (box.min_point[0].tolist(), box.max_point[0].tolist())
         # Read actual USD extents rather than assuming the roots lie on the table surface.
@@ -519,7 +578,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         )
         pouring_assets = {}
         for name, path in asset_paths.items():
-            addons = {}
+            addons = {"func": _spawn_pouring_object, "make_uninstanceable": True}
             if name == "pad":
                 addons["rigid_props"] = sim_utils.RigidBodyPropertiesCfg(kinematic_enabled=True)
             asset = Object(
@@ -553,9 +612,13 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             "the ball moves with the cup so that it starts inside."
         )
         task.scene_config = PouringSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
-        task.scene_config.ball_bowl_contact = pouring_assets["ball"].get_contact_sensor_cfg(pouring_assets["bowl"])
-        task.scene_config.bowl_pad_contact = pouring_assets["bowl"].get_contact_sensor_cfg(pouring_assets["pad"])
-        pouring_contact_paths = [pouring_assets[name].get_contact_sensor_prim_path() for name in ("cup", "bowl")]
+        task.scene_config.ball_bowl_contact = ContactSensorCfg(
+            prim_path=contact_paths["ball"], filter_prim_paths_expr=[contact_paths["bowl"]]
+        )
+        task.scene_config.bowl_pad_contact = ContactSensorCfg(
+            prim_path=contact_paths["bowl"], filter_prim_paths_expr=[contact_paths["pad"]]
+        )
+        pouring_contact_paths = [contact_paths[name] for name in ("cup", "bowl")]
         task.scene_config.left_hand_contact.filter_prim_paths_expr = pouring_contact_paths
         task.scene_config.right_hand_contact.filter_prim_paths_expr = list(pouring_contact_paths)
         task.events_cfg = PouringEventsCfg()
