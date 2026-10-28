@@ -51,7 +51,11 @@ class GR1TwoArmBoxCleanupEnvironmentCfg(ArenaEnvironmentCfg):
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
-        assert self.embodiment == "gr1_pink", "Two-arm box cleanup requires the GR1T2 Pink IK embodiment"
+        if self.embodiment not in ("gr1_pink", "gr1_joint"):
+            raise ValueError(
+                f"Two-arm box cleanup requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
+                f"got {self.embodiment!r}."
+            )
         for name in ("success_max_xy_distance", "success_max_height_difference", "success_max_speed"):
             value = getattr(self, name)
             assert math.isfinite(value) and value > 0, f"{name} must be finite and positive"
@@ -390,7 +394,8 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 rotation_xyzw=tuple(source_scene.robot.init_state.rot),
             )
         )
-        embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
+        if cfg.embodiment == "gr1_pink":
+            embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
         robot_pov_cam = source_scene.robot_pov_cam.copy()
         robot_pov_cam.height = 512
         robot_pov_cam.width = 512

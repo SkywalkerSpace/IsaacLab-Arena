@@ -147,4 +147,4 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --record_viewport_video \
   --record_camera_video \
   ${TSAK_NAME} \
-  --embodiment gr1_joint 
+  --embodiment gr1_joint
