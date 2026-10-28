@@ -117,7 +117,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataloader-num-workers 4 \
   --embodiment-tag GR1 \
   --color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
-  --save-total-limit 2
+  --save-total-limit 2 \
+  --use_wandb
 
 
 cd submodules/Isaac-GR00T
