@@ -410,6 +410,28 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
             subtask_terms: CanSortRandomSubtaskTermsCfg = CanSortRandomSubtaskTermsCfg()
 
         class CanSortRandomMimicEnv(GR1T2MimicEnv):
+            def reset_to(self, state, env_ids, seed=None, is_relative=False):
+                """Restore the task can's identity together with the recorded scene state."""
+                blue_pose = state["rigid_object"]["blue_can"]["root_pose"]
+                red_pose = state["rigid_object"]["red_can"]["root_pose"]
+                # The task can starts in the smaller-X slot; environment origins cancel.
+                left_is_blue = (blue_pose[:, 0] < red_pose[:, 0]).to(self.device)
+                restore_env_ids = slice(None) if env_ids is None else env_ids
+                self._can_sort_replay_assignment = (restore_env_ids, left_is_blue)
+                try:
+                    return super().reset_to(state, env_ids, seed=seed, is_relative=is_relative)
+                finally:
+                    self._can_sort_replay_assignment = None
+
+            def _reset_idx(self, env_ids):
+                super()._reset_idx(env_ids)
+                assignment = getattr(self, "_can_sort_replay_assignment", None)
+                if assignment is not None:
+                    # Reset events redraw colors. Restore identity before reset_to's recorder
+                    # hooks and observations use the recorded physical state.
+                    restore_env_ids, left_is_blue = assignment
+                    self._can_left_is_blue[restore_env_ids] = left_is_blue
+
             def get_object_poses(self, env_ids=None):
                 import torch
 
