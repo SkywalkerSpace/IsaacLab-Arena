@@ -25,37 +25,45 @@ if TYPE_CHECKING:
 
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "examples" / "assets" / "mjcf2usd"
-LID_POSITION = (-0.05, 0.30, 1.01)
-BIN_POSITION = (0.05, 0.55, 1.07)
-LID_SCALE = (0.8, 0.8, 0.8)
-BIN_SCALE = (0.5, 0.5, 0.5)
+HANDOFF_MAX_DISTANCE = 0.10
+BOX_LEFT_POSITION = (-0.25, 0.50, 1.07)
+BOX_RIGHT_POSITION = (0.25, 0.50, 1.07)
+CAN_POSITION = (0.0, 0.30, 1.01)
+BOX_SCALE = (0.5, 0.5, 0.5)
+CAN_SCALE = (0.8, 0.8, 0.8)
 
 
 @dataclass
-class GR1TwoArmBoxCleanupEnvironmentCfg(ArenaEnvironmentCfg):
-    """Configure the GR1T2 two-arm box-cleanup environment."""
+class GR1TwoArmCanSortRandomEnvironmentCfg(ArenaEnvironmentCfg):
+    """Configure the GR1T2 two-arm can-sort-random environment."""
 
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
     episode_length_s: float = 20.0
-    lid_usd_path: str = str(_ASSET_DIR / "box_cleanup_lid.usd")
-    bin_usd_path: str = str(_ASSET_DIR / "box_cleanup_bin.usd")
+    can_sort_blue_box_path: str = str(_ASSET_DIR / "can_sort_blue_box.usd")
+    can_sort_red_box_path: str = str(_ASSET_DIR / "can_sort_red_box.usd")
+    can_sort_blue_can_path: str = str(_ASSET_DIR / "can_sort_blue_can.usd")
+    can_sort_red_can_path: str = str(_ASSET_DIR / "can_sort_red_can.usd")
     success_max_xy_distance: float = 0.10
     success_max_height_difference: float = 0.08
     success_max_speed: float = 0.20
-    """Componentwise lid velocity limits in m/s (linear) and rad/s (angular)."""
-    lid_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    """Success reference point in the scaled lid's root frame, in meters; calibrate for custom assets."""
-    bin_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
-    """Success reference point in the scaled bin's root frame, in meters; calibrate for custom assets."""
+    """Componentwise can velocity limits in m/s (linear) and rad/s (angular)."""
+    can_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    """Success reference point in the can's root frame, in meters."""
+    box_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
+    """Success reference point in the matching box's root frame, in meters."""
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
-        assert self.embodiment == "gr1_pink", "Two-arm box cleanup requires the GR1T2 Pink IK embodiment"
+        if self.embodiment not in ("gr1_pink", "gr1_joint"):
+            raise ValueError(
+                f"Two-arm can sort random requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
+                f"got {self.embodiment!r}."
+            )
         for name in ("success_max_xy_distance", "success_max_height_difference", "success_max_speed"):
             value = getattr(self, name)
             assert math.isfinite(value) and value > 0, f"{name} must be finite and positive"
-        for name in ("lid_reference_offset", "bin_reference_offset"):
+        for name in ("can_reference_offset", "box_reference_offset"):
             offset = getattr(self, name)
             assert len(offset) == 3 and all(math.isfinite(value) for value in offset), (
                 f"{name} must contain three finite coordinates"
@@ -102,6 +110,47 @@ def _object_lifted(
     return obj.data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2] > min_height
 
 
+def _object_near_left_palm(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    max_distance: float = HANDOFF_MAX_DISTANCE,
+) -> torch.Tensor:
+    """Signal the right-to-left handoff when the object is close to the left palm [m]."""
+    import torch
+
+    obj = env.scene[object_cfg.name]
+    robot = env.scene["robot"]
+    palm_index = robot.data.body_names.index("left_hand_pitch_link")
+    object_pos = obj.data.root_pos_w.torch
+    palm_pos = robot.data.body_pos_w.torch[:, palm_index]
+    return torch.linalg.vector_norm(object_pos - palm_pos, dim=1) < max_distance
+
+
+def _randomize_box_sides(env: ManagerBasedRLEnv, env_ids: torch.Tensor | None) -> None:
+    """Randomly swap the blue and red boxes between the two left-side positions on reset."""
+    import torch
+
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=env.device).reshape(-1)
+    if len(env_ids) == 0:
+        return
+    swap = torch.rand(len(env_ids), device=env.device) < 0.5
+    blue_x = torch.where(swap, BOX_RIGHT_POSITION[0], BOX_LEFT_POSITION[0])
+    red_x = torch.where(swap, BOX_LEFT_POSITION[0], BOX_RIGHT_POSITION[0])
+    identity = torch.tensor((0.0, 0.0, 0.0, 1.0), device=env.device)
+    for name, x in (("blue_box", blue_x), ("red_box", red_x)):
+        asset = env.scene[name]
+        pose = torch.zeros((len(env_ids), 7), device=env.device)
+        pose[:, 0] = x
+        pose[:, 1] = BOX_LEFT_POSITION[1]
+        pose[:, 2] = BOX_LEFT_POSITION[2]
+        pose[:, 3:] = identity
+        pose[:, :3] += env.scene.env_origins[env_ids]
+        asset.write_root_pose_to_sim(pose, env_ids=env_ids)
+        asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
+
+
 def _object_near_target(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
@@ -112,8 +161,9 @@ def _object_near_target(
     max_speed: float = 0.20,
     object_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
     target_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    required_variant_index: int | None = None,
 ) -> torch.Tensor:
-    """Check local reference-point proximity [m] and lid velocity limits [m/s, rad/s]."""
+    """Check local reference-point proximity [m] and can velocity limits [m/s, rad/s]."""
     import torch
 
     from isaaclab.utils.math import quat_apply
@@ -130,15 +180,25 @@ def _object_near_target(
     xy_distance = torch.linalg.vector_norm(object_point_E[:, :2] - target_point_E[:, :2], dim=1)
     height_difference = torch.abs(object_point_E[:, 2] - target_point_E[:, 2])
     velocity = torch.abs(obj.data.root_vel_w.torch)
+    is_matching_variant = True
+    if required_variant_index is not None:
+        can_set = getattr(env, "_arena_can_object_set", None)
+        if can_set is None:
+            can_set = env.unwrapped.task._can_object_set
+        active_variant_index = can_set.variant_indices_by_env
+        is_matching_variant = torch.tensor(
+            [index == required_variant_index for index in active_variant_index], device=obj_pos.device
+        )
     return (
         (xy_distance < max_xy_distance)
         & (height_difference < max_height_difference)
         & (obj_pos[:, 2] < max_height)
         & torch.all(velocity < max_speed, dim=1)
+        & is_matching_variant
     )
 
 
-def _configure_two_arm_box_cleanup(
+def _configure_two_arm_can_sort_random(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
 ) -> IsaacLabArenaManagerBasedRLEnvCfg:
     """Apply 50 Hz control, glove feedback, and camera recording settings."""
@@ -153,11 +213,11 @@ def _configure_two_arm_box_cleanup(
 
 
 @register_environment
-class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanupEnvironmentCfg]):
-    """Manipulate the lid and bin with both hands until the lid settles near the bin."""
+class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSortRandomEnvironmentCfg]):
+    """Hand a randomly colored can from right to left and place it into its matching box."""
 
-    name = "gr1_two_arm_box_cleanup"
-    _legacy_argparse_cfg_type = GR1TwoArmBoxCleanupEnvironmentCfg
+    name = "gr1_two_arm_can_sort_random"
+    _legacy_argparse_cfg_type = GR1TwoArmCanSortRandomEnvironmentCfg
 
     @staticmethod
     def _add_legacy_cli_only_args(parser: argparse.ArgumentParser) -> None:
@@ -165,23 +225,25 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             "--object",
             type=str,
             default=None,
-            help="Accepted for CLI compatibility only; use --lid_usd_path and --bin_usd_path to select assets.",
+            help="Accepted for CLI compatibility only; use --can_sort_blue_box_path and --can_sort_red_box_path to select assets.",
         )
 
-    def build(self, cfg: GR1TwoArmBoxCleanupEnvironmentCfg) -> IsaacLabArenaEnvironment:
+    def build(self, cfg: GR1TwoArmCanSortRandomEnvironmentCfg) -> IsaacLabArenaEnvironment:
         """Build the custom task from stock GR1 configs without importing the custom Lab environment."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
-        from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
-        from isaaclab.managers import ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
+        import isaaclab.utils.math as pose_utils
+        from isaaclab.envs.mimic_env_cfg import (
+            MimicEnvCfg,
+            SubTaskConfig,
+            SubTaskConstraintConfig,
+            SubTaskConstraintType,
+        )
+        from isaaclab.managers import EventTermCfg, ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
         from isaaclab.scene import InteractiveSceneCfg
         from isaaclab.sensors import CameraCfg
         from isaaclab.utils.configclass import configclass
-        from isaaclab_tasks.contrib.pick_place.pickplace_gr1t2_env_cfg import (
-            EventCfg,
-            PickPlaceGR1T2SceneCfg,
-            TerminationsCfg,
-        )
+        from isaaclab_tasks.contrib.pick_place.pickplace_gr1t2_env_cfg import PickPlaceGR1T2SceneCfg, TerminationsCfg
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
@@ -196,75 +258,73 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
 
+        # Isaac Lab Mimic calls this helper for TRANSFORM coordination. Some
+        # Isaac Lab versions do not expose it from isaaclab.utils.math.
+        if not hasattr(pose_utils, "get_delta_object_pose"):
+            pose_utils.get_delta_object_pose = lambda cur_obj_pose, src_obj_pose: pose_utils.pose_in_A_to_pose_in_B(
+                pose_in_A=pose_utils.pose_inv(src_obj_pose), pose_A_in_B=cur_obj_pose
+            )
+
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
-        source_events = EventCfg()
 
         @configclass
-        class BoxCleanupSceneCfg(InteractiveSceneCfg):
-            # The custom lid has a root rigid body, unlike the nested stock steering wheel.
-            left_hand_contact = source_scene.left_hand_contact.replace(filter_prim_paths_expr=["{ENV_REGEX_NS}/Object"])
+        class CanSortRandomSceneCfg(InteractiveSceneCfg):
+            left_hand_contact = source_scene.left_hand_contact.replace(filter_prim_paths_expr=["{ENV_REGEX_NS}/Can"])
             right_hand_contact = source_scene.right_hand_contact.replace(
-                filter_prim_paths_expr=["{ENV_REGEX_NS}/Object2"]
+                filter_prim_paths_expr=["{ENV_REGEX_NS}/Can"]
             )
 
         @configclass
-        class BoxCleanupEventsCfg(EventCfg):
-            reset_object = source_events.reset_object.replace(
+        class CanSortRandomEventsCfg:
+            reset_all = EventTermCfg(func=mdp.reset_scene_to_default, mode="reset")
+            reset_can = EventTermCfg(
+                func=mdp.reset_root_state_uniform,
+                mode="reset",
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": {"x": (-0.04, 0.04), "y": (-0.04, 0.04), "yaw": (-1.57079, 1.57079)},
                     "velocity_range": {},
-                    "asset_cfg": SceneEntityCfg("object"),
-                }
+                    "asset_cfg": SceneEntityCfg("can"),
+                },
             )
-            reset_object_2 = source_events.reset_object.replace(
-                params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-1.57079, 1.57079)},
-                    "velocity_range": {},
-                    "asset_cfg": SceneEntityCfg("object_2"),
-                }
-            )
+            randomize_box_sides = EventTermCfg(func=_randomize_box_sides, mode="reset")
 
         @configclass
-        class BoxCleanupPolicyCfg(ObservationGroupCfg):
-            object_pos = ObservationTermCfg(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("object")})
-            object_rot = ObservationTermCfg(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("object")})
-            object_2_pos = ObservationTermCfg(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("object_2")})
-            object_2_rot = ObservationTermCfg(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("object_2")})
+        class CanSortRandomPolicyCfg(ObservationGroupCfg):
+            can_pos = ObservationTermCfg(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("can")})
+            can_rot = ObservationTermCfg(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("can")})
+            blue_box_pos = ObservationTermCfg(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("blue_box")})
+            blue_box_rot = ObservationTermCfg(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("blue_box")})
+            red_box_pos = ObservationTermCfg(func=mdp.root_pos_w, params={"asset_cfg": SceneEntityCfg("red_box")})
+            red_box_rot = ObservationTermCfg(func=mdp.root_quat_w, params={"asset_cfg": SceneEntityCfg("red_box")})
             concatenate_terms = False
             enable_corruption = False
 
         @configclass
-        class BoxCleanupSubtaskTermsCfg(ObservationGroupCfg):
-            # Separate lift thresholds keep the taller bin from starting with a true grasp signal.
-            grasp_left = ObservationTermCfg(
-                func=_object_lifted,
-                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.03},
-            )
-            grasp_right = ObservationTermCfg(
-                func=_object_lifted,
-                params={"object_cfg": SceneEntityCfg("object_2"), "min_height": BIN_POSITION[2] + 0.03},
-            )
+        class CanSortRandomSubtaskTermsCfg(ObservationGroupCfg):
+            # Both arms' first subtasks end at the handoff pose. The right arm
+            # reaches it first; sequential constraints then let the left arm take over.
+            handoff = ObservationTermCfg(func=_object_near_left_palm, params={"object_cfg": SceneEntityCfg("can")})
             concatenate_terms = False
             enable_corruption = False
 
         @configclass
-        class BoxCleanupObservationsCfg:
-            subtask_terms: BoxCleanupSubtaskTermsCfg = BoxCleanupSubtaskTermsCfg()
+        class CanSortRandomObservationsCfg:
+            subtask_terms: CanSortRandomSubtaskTermsCfg = CanSortRandomSubtaskTermsCfg()
 
-        class BoxCleanupMimicEnv(GR1T2MimicEnv):
+        class CanSortRandomMimicEnv(GR1T2MimicEnv):
             def get_subtask_term_signals(self, env_ids=None):
                 if env_ids is None:
                     env_ids = slice(None)
                 terms = self.obs_buf["subtask_terms"]
-                return {name: terms[name][env_ids] for name in ("grasp_left", "grasp_right")}
+                return {"handoff": terms["handoff"][env_ids]}
 
         @configclass
-        class BoxCleanupCameraCfg(GR1T2CameraCfg):
+        class CanSortRandomCameraCfg(GR1T2CameraCfg):
             left_wrist_cam = CameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/left_hand_pitch_link/LeftWristCam",
                 update_period=0.0,
-                height=256,
-                width=256,
+                height=512,
+                width=512,
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.1, 2.0)),
                 offset=CameraCfg.OffsetCfg(
@@ -274,8 +334,8 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             right_wrist_cam = CameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/right_hand_pitch_link/RightWristCam",
                 update_period=0.0,
-                height=256,
-                width=256,
+                height=512,
+                width=512,
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.1, 2.0)),
                 offset=CameraCfg.OffsetCfg(
@@ -283,7 +343,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 ),
             )
 
-        class BoxCleanupCompletionCriteria(CompletionCriteria):
+        class CanSortRandomCompletionCriteria(CompletionCriteria):
             """Keep derived predicate tuples out of the serialized environment config."""
 
             def __post_init__(self):
@@ -294,61 +354,126 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             def canonical_predicate_sequences(self):
                 return CompletionCriteria(**vars(self)).canonical_predicate_sequences
 
-        class TwoArmBoxCleanupTask(GoalPoseTask):
+        class TwoArmCanSortRandomTask(GoalPoseTask):
+            def __init__(self, *args, target_box_name: str, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.target_box_name = target_box_name
+
             def get_observation_cfg(self):
-                return BoxCleanupObservationsCfg()
+                return CanSortRandomObservationsCfg()
 
             def get_termination_cfg(self) -> TaskTerminationCfg:
                 source_terminations = TerminationsCfg()
-                success = source_terminations.success.replace(
+                success_blue = source_terminations.success.replace(
                     func=_object_near_target,
                     params={
-                        "object_cfg": SceneEntityCfg("object"),
-                        "target_cfg": SceneEntityCfg("object_2"),
+                        "object_cfg": SceneEntityCfg("can"),
+                        "target_cfg": SceneEntityCfg("blue_box"),
                         "max_xy_distance": cfg.success_max_xy_distance,
                         "max_height_difference": cfg.success_max_height_difference,
                         "max_speed": cfg.success_max_speed,
-                        "object_reference_offset": tuple(cfg.lid_reference_offset),
-                        "target_reference_offset": tuple(cfg.bin_reference_offset),
+                        "object_reference_offset": tuple(cfg.can_reference_offset),
+                        "target_reference_offset": tuple(cfg.box_reference_offset),
+                        "required_variant_index": 0,
+                    },
+                )
+                success_red = source_terminations.success.replace(
+                    func=_object_near_target,
+                    params={
+                        "object_cfg": SceneEntityCfg("can"),
+                        "target_cfg": SceneEntityCfg("red_box"),
+                        "max_xy_distance": cfg.success_max_xy_distance,
+                        "max_height_difference": cfg.success_max_height_difference,
+                        "max_speed": cfg.success_max_speed,
+                        "object_reference_offset": tuple(cfg.can_reference_offset),
+                        "target_reference_offset": tuple(cfg.box_reference_offset),
+                        "required_variant_index": 1,
                     },
                 )
                 return TaskTerminationCfg(
                     timeout_s=self.episode_length_s,
-                    success=[BoxCleanupCompletionCriteria(name="box_cleanup", predicate_sequence=[success])],
-                    failures={"object_dropping": source_terminations.object_dropping},
+                    success=[
+                        CanSortRandomCompletionCriteria(name="blue_can_in_blue_box", predicate_sequence=[success_blue]),
+                        CanSortRandomCompletionCriteria(name="red_can_in_red_box", predicate_sequence=[success_red]),
+                    ],
+                failures={
+                    "can_dropping": source_terminations.object_dropping.replace(
+                        params={"minimum_height": 0.5, "asset_cfg": SceneEntityCfg("can")}
+                    )
+                },
                 )
 
             def get_mimic_env_cfg(self, arm_mode: ArmMode):
-                assert arm_mode == ArmMode.DUAL_ARM, "Box cleanup requires both arms in Mimic demonstrations"
+                assert arm_mode == ArmMode.DUAL_ARM, "Can sort random one arm in Mimic demonstrations"
                 mimic_cfg = MimicEnvCfg()
-                mimic_cfg.datagen_config.name = "gr1_two_arm_box_cleanup_D0"
+                mimic_cfg.datagen_config.name = "gr1_two_arm_can_sort_random_D0"
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(mimic_cfg.datagen_config, key, value)
-                for arm, pickup_name, destination_name in (("left", "object", "object_2"), ("right", "object_2", None)):
-                    mimic_cfg.subtask_configs[arm] = [
-                        SubTaskConfig(
-                            object_ref=pickup_name,
-                            subtask_term_signal=f"grasp_{arm}",
-                            subtask_term_offset_range=(0, 0),
-                            selection_strategy="nearest_neighbor_object",
-                            selection_strategy_kwargs={"nn_k": 3},
-                            action_noise=0.003,
-                        ),
-                        SubTaskConfig(
-                            object_ref=destination_name,
-                            subtask_term_signal=None,
-                            subtask_term_offset_range=(0, 0),
-                            selection_strategy="nearest_neighbor_object" if destination_name is not None else "random",
-                            selection_strategy_kwargs={"nn_k": 3} if destination_name is not None else {},
-                            action_noise=0.003,
-                        ),
-                    ]
+                mimic_cfg.subtask_configs["right"] = [
+                    SubTaskConfig(
+                        object_ref="can",
+                        subtask_term_signal="handoff",
+                        first_subtask_start_offset_range=(0, 0),
+                        subtask_term_offset_range=(0, 0),
+                        selection_strategy="nearest_neighbor_object",
+                        selection_strategy_kwargs={"nn_k": 3},
+                        action_noise=0.003,
+                        num_interpolation_steps=0,
+                        num_fixed_steps=0,
+                        apply_noise_during_interpolation=False,
+                    ),
+                    SubTaskConfig(
+                        object_ref=self.target_box_name,
+                        subtask_term_signal=None,
+                        subtask_term_offset_range=(0, 0),
+                        selection_strategy="nearest_neighbor_object",
+                        selection_strategy_kwargs={"nn_k": 3},
+                        action_noise=0.003,
+                        num_interpolation_steps=3,
+                        num_fixed_steps=0,
+                        apply_noise_during_interpolation=False,
+                    ),
+                ]
+                mimic_cfg.subtask_configs["left"] = [
+                    SubTaskConfig(
+                        object_ref="can",
+                        subtask_term_signal="handoff",
+                        first_subtask_start_offset_range=(0, 0),
+                        subtask_term_offset_range=(0, 0),
+                        selection_strategy="nearest_neighbor_object",
+                        selection_strategy_kwargs={"nn_k": 3},
+                        action_noise=0.003,
+                        num_interpolation_steps=0,
+                        num_fixed_steps=0,
+                        apply_noise_during_interpolation=False,
+                    ),
+                    SubTaskConfig(
+                        object_ref=self.target_box_name,
+                        subtask_term_signal=None,
+                        subtask_term_offset_range=(0, 0),
+                        selection_strategy="nearest_neighbor_object",
+                        selection_strategy_kwargs={"nn_k": 3},
+                        action_noise=0.003,
+                        num_interpolation_steps=3,
+                        num_fixed_steps=0,
+                        apply_noise_during_interpolation=False,
+                    ),
+                ]
+                mimic_cfg.task_constraint_configs = [
+                    SubTaskConstraintConfig(
+                        eef_subtask_constraint_tuple=[("right", 0), ("left", 0)],
+                        constraint_type=SubTaskConstraintType.SEQUENTIAL,
+                    )
+                ]
                 return mimic_cfg
 
         embodiment = self.asset_registry.get_asset_by_name(cfg.embodiment)(enable_cameras=cfg.enable_cameras)
         embodiment.arm_mode = ArmMode.DUAL_ARM
-        embodiment.mimic_env = BoxCleanupMimicEnv
+        embodiment.mimic_env = CanSortRandomMimicEnv
         embodiment.scene_config.robot = source_scene.robot.copy()
+        # The source robot faces +Y. XR forward maps to +Y with an identity anchor;
+        # FOLLOW_PRIM_SMOOTHED follows only pelvis yaw changes, not its initial yaw.
+        embodiment.xr.anchor_rot = (0.0, 0.0, 0.0, 1.0)
         # embodiment.scene_config.robot.init_state.joint_pos.update(
         #     {"right_elbow_pitch_joint": -2.260, "left_elbow_pitch_joint": -2.260}
         # )
@@ -358,12 +483,16 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 rotation_xyzw=tuple(source_scene.robot.init_state.rot),
             )
         )
-        embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
-        embodiment.camera_config = BoxCleanupCameraCfg(robot_pov_cam=source_scene.robot_pov_cam.copy())
+        if cfg.embodiment == "gr1_pink":
+            embodiment.action_config.upper_body_ik.controller.usd_path = embodiment.scene_config.robot.spawn.usd_path
+        robot_pov_cam = source_scene.robot_pov_cam.copy()
+        robot_pov_cam.height = 512
+        robot_pov_cam.width = 512
+        embodiment.camera_config = CanSortRandomCameraCfg(robot_pov_cam=robot_pov_cam)
         embodiment.observation_config.policy = combine_configclass_instances(
-            "GR1TwoArmBoxCleanupPolicyCfg",
+            "GR1TwoArmCanSortRandomPolicyCfg",
             embodiment.observation_config.policy,
-            BoxCleanupPolicyCfg(),
+            CanSortRandomPolicyCfg(),
             bases=(ObservationGroupCfg,),
         )
 
@@ -380,27 +509,47 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 rotation_xyzw=tuple(source_scene.packing_table.init_state.rot),
             ),
         )
-        lid = Object(
-            name="object",
-            prim_path=source_scene.object.prim_path,
+        blue_box = Object(
+            name="blue_box",
+            prim_path="{ENV_REGEX_NS}/BlueBox",
             object_type=ObjectType.RIGID,
             spawner_cfg=source_scene.object.spawn.replace(
-                usd_path=cfg.lid_usd_path, scale=LID_SCALE, activate_contact_sensors=True
+                usd_path=cfg.can_sort_blue_box_path, scale=BOX_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(position_xyz=LID_POSITION),
+            initial_pose=Pose(position_xyz=BOX_LEFT_POSITION),
         )
-        bin_object = Object(
-            name="object_2",
-            prim_path="{ENV_REGEX_NS}/Object2",
+        red_box = Object(
+            name="red_box",
+            prim_path="{ENV_REGEX_NS}/RedBox",
             object_type=ObjectType.RIGID,
             spawner_cfg=source_scene.object.spawn.replace(
-                usd_path=cfg.bin_usd_path, scale=BIN_SCALE, activate_contact_sensors=True
+                usd_path=cfg.can_sort_red_box_path, scale=BOX_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(position_xyz=BIN_POSITION),
+            initial_pose=Pose(position_xyz=BOX_RIGHT_POSITION),
         )
-        # Source reset events restore and randomize both default poses without competing asset resets.
-        lid.disable_reset_pose()
-        bin_object.disable_reset_pose()
+        from isaaclab_arena.assets.object_set import RigidObjectSet
+
+        blue_can = Object(
+            name="blue_can_variant",
+            usd_path=cfg.can_sort_blue_can_path,
+            scale=CAN_SCALE,
+        )
+        red_can = Object(
+            name="red_can_variant",
+            usd_path=cfg.can_sort_red_can_path,
+            scale=CAN_SCALE,
+        )
+        can = RigidObjectSet(
+            name="can",
+            objects=[blue_can, red_can],
+            random_choice=True,
+            prim_path="{ENV_REGEX_NS}/Can",
+            initial_pose=Pose(position_xyz=CAN_POSITION),
+        )
+        can.assign_variants(num_envs=1)
+        can.disable_reset_pose()
+        blue_box.disable_reset_pose()
+        red_box.disable_reset_pose()
         ground = Object(
             name="ground",
             prim_path=source_scene.ground.prim_path,
@@ -413,11 +562,22 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             object_type=ObjectType.BASE,
             spawner_cfg=source_scene.light.spawn.copy(),
         )
-        scene = Scene(assets=[table, lid, bin_object, ground, light])
-        task = TwoArmBoxCleanupTask(object=lid, episode_length_s=cfg.episode_length_s)
-        task.task_description = "Use both hands to bring the box lid close to the bin."
-        task.scene_config = BoxCleanupSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
-        task.events_cfg = BoxCleanupEventsCfg()
+        scene = Scene(assets=[table, blue_box, red_box, can, ground, light])
+        color_name = "blue" if can.variant_indices_by_env[0] == 0 else "red"
+        target_box_name = f"{color_name}_box"
+        task = TwoArmCanSortRandomTask(
+            object=can,
+            episode_length_s=cfg.episode_length_s,
+            target_box_name=target_box_name,
+        )
+        task._can_object_set = can
+        task.task_description = (
+            f"Pick up the {color_name} can with the right hand, hand it to the left hand, "
+            f"and place it inside the {color_name} box. The blue and red boxes are on the left; "
+            "their left-right positions are randomized."
+        )
+        task.scene_config = CanSortRandomSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
+        task.events_cfg = CanSortRandomEventsCfg()
 
         teleop_device = None
         if cfg.teleop_device is not None:
@@ -428,5 +588,5 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             scene=scene,
             task=task,
             teleop_device=teleop_device,
-            env_cfg_callback=_configure_two_arm_box_cleanup,
+            env_cfg_callback=_configure_two_arm_can_sort_random,
         )
