@@ -189,7 +189,9 @@ def _randomize_pouring_layout(
         pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
         asset = env.scene[name]
         asset.write_root_pose_to_sim(pose, env_ids=env_ids)
-        asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
+        # PhysX forbids velocity writes to the kinematic pad, including zero velocities.
+        if name != "pad":
+            asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
 
 
 def _pouring_object_dropped(env: ManagerBasedRLEnv, object_name: str, minimum_height: float = 0.5) -> torch.Tensor:
@@ -393,7 +395,21 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
 
         @configclass
         class PouringEventsCfg:
-            reset_all = EventTermCfg(func=mdp.reset_scene_to_default, mode="reset")
+            # The layout event resets every prop; a scene-wide reset would write pad velocities.
+            reset_all = EventTermCfg(
+                func=mdp.reset_root_state_uniform,
+                mode="reset",
+                params={"asset_cfg": SceneEntityCfg("robot"), "pose_range": {}, "velocity_range": {}},
+            )
+            reset_robot_joints = EventTermCfg(
+                func=mdp.reset_joints_by_offset,
+                mode="reset",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot"),
+                    "position_range": (0.0, 0.0),
+                    "velocity_range": (0.0, 0.0),
+                },
+            )
             randomize_pouring_layout = EventTermCfg(
                 func=_randomize_pouring_layout,
                 mode="reset",
