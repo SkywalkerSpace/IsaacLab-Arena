@@ -34,7 +34,7 @@ PAD_POSITION_XY = (0.30, 0.35)
 CUP_GRASP_MAX_DISTANCE = 0.10
 CUP_GRASP_MIN_LIFT = 0.03
 CUP_SCALE = (0.7, 0.7, 1.0)
-BALL_SCALE = (0.7, 0.7, 0.7)
+BALL_SCALE = (0.6, 0.6, 0.6)
 
 @dataclass
 class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):

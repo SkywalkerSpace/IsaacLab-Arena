@@ -13,7 +13,7 @@ def Xform "Asset" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyA
     int physxRigidBody:solverVelocityIterationCount = 8
 
     # Explicit convex walls avoid relying on automatic decomposition of the thin visual shell.
-    # Wall thickness is reinforced inward to approximately 3 mm at the task's 0.8 XY scale.
+    # Wall thickness is reinforced inward to 5 mm at the task's 0.7 XY scale.
     def Xform "Colliders" {
         token visibility = "invisible"
         double xformOp:rotateZ = 0.5453
@@ -25,8 +25,8 @@ def Xform "Asset" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyA
             float physxCollision:restOffset = 0
             uniform token axis = "Z"
             double radius = 0.02962
-            double height = 0.004
-            double3 xformOp:translate = (0, 0, -0.0555)
+            double height = 0.005
+            double3 xformOp:translate = (0, 0, -0.055)
             uniform token[] xformOpOrder = ["xformOp:translate"]
         }
 
@@ -35,7 +35,7 @@ def Xform "Asset" (prepend apiSchemas = ["PhysicsRigidBodyAPI", "PhysxRigidBodyA
             uniform token physics:approximation = "convexHull"
             float physxCollision:contactOffset = 0.002
             float physxCollision:restOffset = 0
-            point3f[] points = [(0.029620000, 0, -0.0575), (0.028170294, 0.009153083, -0.0575), (0.024603832, 0.007994270, -0.0575), (0.025870000, 0, -0.0575), (0.037220000, 0, 0.0575), (0.035398324, 0.011501613, 0.0575), (0.031831862, 0.010342799, 0.0575), (0.033470000, 0, 0.0575)]
+            point3f[] points = [(0.029620000, 0, -0.0575), (0.028170294, 0.009153083, -0.0575), (0.021285179, 0.006915974, -0.0575), (0.022380561, 0, -0.0575), (0.037220000, 0, 0.0575), (0.035398324, 0.011501613, 0.0575), (0.028513208, 0.009264503, 0.0575), (0.029980561, 0, 0.0575)]
             int[] faceVertexCounts = [4, 4, 4, 4, 4, 4]
             int[] faceVertexIndices = [0, 3, 2, 1, 4, 5, 6, 7, 0, 1, 5, 4, 1, 2, 6, 5, 2, 3, 7, 6, 3, 0, 4, 7]
             uniform token subdivisionScheme = "none"
