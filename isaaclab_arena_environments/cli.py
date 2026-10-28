@@ -40,7 +40,7 @@ def ensure_environments_registered():
 # inherit ExampleEnvironmentBase continue using their own add_cli_args() and get_env().
 # TODO(cvolk, 2026-07-03): [typed-config-migration] Delete this section and the factories'
 # _legacy_argparse_cfg_type declarations when runners receive typed configs directly.
-_FIELDS_PROVIDED_BY_SHARED_PARSERS = {"auto", "enable_cameras", "mimic", "num_envs"}
+_FIELDS_PROVIDED_BY_SHARED_PARSERS = {"auto", "enable_cameras", "mimic", "num_envs", "language_instruction"}
 
 
 def _get_legacy_argparse_cfg_type(
