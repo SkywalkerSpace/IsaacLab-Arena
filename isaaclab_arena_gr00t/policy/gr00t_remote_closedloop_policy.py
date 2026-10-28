@@ -70,6 +70,9 @@ class Gr00tRemoteClosedloopPolicyCfg(Gr00tBasePolicyCfg):
     scheduler: ActionSchedulerType = ActionSchedulerType.CHUNK
     """Action scheduler used to consume inference chunks."""
 
+    language_instruction: str | None = None
+    """Optional language instruction to override the one in the policy config YAML."""
+
 
 @register_policy
 class Gr00tRemoteClosedloopPolicy(PolicyBase[Gr00tRemoteClosedloopPolicyCfg]):
@@ -89,7 +92,7 @@ class Gr00tRemoteClosedloopPolicy(PolicyBase[Gr00tRemoteClosedloopPolicyCfg]):
         # Policy config (for obs/action translation — no model loading)
         # TODO(xinjieyao, 2026-04-27): to be refactored
         self.policy_config: Gr00tClosedloopPolicyCfg = create_config_from_yaml(
-            config.policy_config_yaml_path, Gr00tClosedloopPolicyCfg
+            config.policy_config_yaml_path, Gr00tClosedloopPolicyCfg, language_instruction=config.language_instruction
         )
         self.num_envs = config.num_envs
         self.device = config.policy_device

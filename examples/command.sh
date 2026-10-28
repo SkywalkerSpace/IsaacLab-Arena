@@ -137,7 +137,8 @@ export TSAK_NAME=gr1_two_arm_box_cleanup
 
 CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
-  --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_manip_ranch_bottle_gr00t_closedloop_config.yaml \
+  --language_instruction "Use both hands to bring the box lid close to the bin." \
+  --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_two_arm_config.yaml \
   --viz none \
   --remote_host 127.0.0.1 \
   --remote_port 5555 \
