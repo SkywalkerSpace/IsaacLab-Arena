@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 # config from the parsed Namespace.
 # TODO(cvolk, 2026-07-03): [typed-config-migration] Delete this compatibility section when policy_runner receives
 # typed policy configs directly.
-_FIELDS_PROVIDED_BY_SHARED_PARSER = {"device", "num_envs"}
+_FIELDS_PROVIDED_BY_SHARED_PARSER = {"device", "num_envs", "language_instruction"}
 
 
 def _add_policy_cfg_arguments(
