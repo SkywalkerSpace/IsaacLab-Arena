@@ -31,7 +31,7 @@ def Xform "Asset" {
         }
         def Shader "Texture" {
             uniform token info:id = "UsdUVTexture"
-            asset inputs:file = @material_0.png@
+            asset inputs:file = @material_1.png@
             token inputs:sourceColorSpace = "sRGB"
             float4 inputs:scale = (0.8, 0.8, 0.8, 1)
             float2 inputs:st.connect = </Asset/Material/UV.outputs:result>
