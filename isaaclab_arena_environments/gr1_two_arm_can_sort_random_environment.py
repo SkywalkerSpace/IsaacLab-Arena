@@ -28,13 +28,14 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 HANDOFF_MAX_DISTANCE = 0.05
 POSITION_XY_RANDOM_MAX = 0.05
 BOX_CLOCKWISE_90_ROTATION_XYZW = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))
-BOX_LEFT_POSITION = (-0.39, 0.40, 1.02)
-BOX_RIGHT_POSITION = (-0.15, 0.40, 1.02)
+TABLE_SURFACE_HEIGHT = 1.0
+SPAWN_CLEARANCE = 0.002
+BOX_LEFT_POSITION_XY = (-0.39, 0.40)
+BOX_RIGHT_POSITION_XY = (-0.15, 0.40)
 BOX_SCALE = (0.6, 0.6, 0.6)
 CAN_SCALE = (1.0, 1.0, 1.0)
-CAN_LEFT_POSITION = (0.1, 0.30, 1.08)
-CAN_RIGHT_POSITION = (1.5, 0.5, 0.08)
-CAN_GRASP_MIN_HEIGHT = CAN_LEFT_POSITION[2] + 0.03
+CAN_LEFT_POSITION_XY = (0.1, 0.30)
+CAN_RIGHT_POSITION_XY = (1.5, 0.5)
 
 
 @dataclass
@@ -110,7 +111,7 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
 
 
 def _left_can_state(env: ManagerBasedRLEnv, data_name: str) -> torch.Tensor:
-    """Return state for the can assigned to CAN_LEFT_POSITION at the last reset."""
+    """Return state for the can assigned to the left can slot at the last reset."""
     import torch
 
     if not hasattr(env, "_can_left_is_blue"):
@@ -132,8 +133,8 @@ def _left_can_dropped(env: ManagerBasedRLEnv, minimum_height: float = 0.5) -> to
 
 def _object_near_left_palm(
     env: ManagerBasedRLEnv,
+    min_height_by_color: dict[str, float],
     max_distance: float = HANDOFF_MAX_DISTANCE,
-    min_height: float = CAN_GRASP_MIN_HEIGHT,
 ) -> torch.Tensor:
     """Use lift and left-palm proximity as a grasp proxy for the initial left-side can."""
     import torch
@@ -142,6 +143,11 @@ def _object_near_left_palm(
     palm_index = robot.data.body_names.index("left_hand_pitch_link")
     object_pos = _left_can_state(env, "root_pos_w")
     palm_pos = robot.data.body_pos_w.torch[:, palm_index]
+    min_height = torch.where(
+        env._can_left_is_blue,
+        object_pos.new_tensor(min_height_by_color["blue"]),
+        object_pos.new_tensor(min_height_by_color["red"]),
+    )
     lifted = object_pos[:, 2] - env.scene.env_origins[:, 2] > min_height
     return lifted & (torch.linalg.vector_norm(object_pos - palm_pos, dim=1) < max_distance)
 
@@ -150,8 +156,8 @@ def _randomize_pair(
     env: ManagerBasedRLEnv,
     env_ids: torch.Tensor | None,
     kind: str,
-    left_position: tuple[float, float, float],
-    right_position: tuple[float, float, float],
+    left_positions: dict[str, tuple[float, float, float]],
+    right_positions: dict[str, tuple[float, float, float]],
     rotation_xyzw: tuple[float, float, float, float],
     randomization_seed: int | None = None,
 ) -> None:
@@ -177,12 +183,12 @@ def _randomize_pair(
     blue_is_left = torch.rand(len(env_ids), device=env.device, generator=rng) < 0.5
     getattr(env, assignment_name)[env_ids] = blue_is_left
     offset_xy = (torch.rand((len(env_ids), 2), device=env.device, generator=rng) * 2.0 - 1.0) * POSITION_XY_RANDOM_MAX
-    left = torch.tensor(left_position, device=env.device).expand(len(env_ids), 3).clone()
-    right = torch.tensor(right_position, device=env.device).expand(len(env_ids), 3).clone()
-    left[:, :2] += offset_xy
-    if kind == "box":
-        right[:, :2] += offset_xy
     for color, is_left in (("blue", blue_is_left), ("red", ~blue_is_left)):
+        left = torch.tensor(left_positions[color], device=env.device).expand(len(env_ids), 3).clone()
+        right = torch.tensor(right_positions[color], device=env.device).expand(len(env_ids), 3).clone()
+        left[:, :2] += offset_xy
+        if kind == "box":
+            right[:, :2] += offset_xy
         asset = env.scene[f"{color}_{kind}"]
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.where(is_left[:, None], left, right) + env.scene.env_origins[env_ids]
@@ -192,30 +198,38 @@ def _randomize_pair(
 
 
 def _randomize_box_sides(
-    env: ManagerBasedRLEnv, env_ids: torch.Tensor | None, randomization_seed: int | None = None
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor | None,
+    left_positions: dict[str, tuple[float, float, float]],
+    right_positions: dict[str, tuple[float, float, float]],
+    randomization_seed: int | None = None,
 ) -> None:
     """Swap boxes and translate both by the same XY offset in [-5, 5] cm per axis."""
     _randomize_pair(
         env,
         env_ids,
         "box",
-        BOX_LEFT_POSITION,
-        BOX_RIGHT_POSITION,
+        left_positions,
+        right_positions,
         BOX_CLOCKWISE_90_ROTATION_XYZW,
         randomization_seed=randomization_seed,
     )
 
 
 def _randomize_can_position(
-    env: ManagerBasedRLEnv, env_ids: torch.Tensor | None, randomization_seed: int | None = None
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor | None,
+    left_positions: dict[str, tuple[float, float, float]],
+    right_positions: dict[str, tuple[float, float, float]],
+    randomization_seed: int | None = None,
 ) -> None:
     """Swap cans and jitter only the left can slot by [-5, 5] cm per XY axis."""
     _randomize_pair(
         env,
         env_ids,
         "can",
-        CAN_LEFT_POSITION,
-        CAN_RIGHT_POSITION,
+        left_positions,
+        right_positions,
         (0.0, 0.0, 0.0, 1.0),
         randomization_seed=randomization_seed,
     )
@@ -313,8 +327,23 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
+        from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
 
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
+        left_positions = {"box": {}, "can": {}}
+        right_positions = {"box": {}, "can": {}}
+        for kind, scale, left_xy, right_xy in (
+            ("box", BOX_SCALE, BOX_LEFT_POSITION_XY, BOX_RIGHT_POSITION_XY),
+            ("can", CAN_SCALE, CAN_LEFT_POSITION_XY, CAN_RIGHT_POSITION_XY),
+        ):
+            for color in ("blue", "red"):
+                path = getattr(cfg, f"can_sort_{color}_{kind}_path")
+                box = compute_local_bounding_box_from_usd(path, scale)
+                min_z = box.min_point[0, 2].item()
+                left_positions[kind][color] = (*left_xy, TABLE_SURFACE_HEIGHT + SPAWN_CLEARANCE - min_z)
+                # The unused right-side can stays off the table on the ground.
+                right_surface_height = TABLE_SURFACE_HEIGHT if kind == "box" else 0.0
+                right_positions[kind][color] = (*right_xy, right_surface_height + SPAWN_CLEARANCE - min_z)
 
         @configclass
         class CanSortRandomSceneCfg(InteractiveSceneCfg):
@@ -329,10 +358,22 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         class CanSortRandomEventsCfg:
             reset_all = EventTermCfg(func=mdp.reset_scene_to_default, mode="reset")
             reset_can = EventTermCfg(
-                func=_randomize_can_position, mode="reset", params={"randomization_seed": cfg.randomization_seed}
+                func=_randomize_can_position,
+                mode="reset",
+                params={
+                    "left_positions": left_positions["can"],
+                    "right_positions": right_positions["can"],
+                    "randomization_seed": cfg.randomization_seed,
+                },
             )
             randomize_box_sides = EventTermCfg(
-                func=_randomize_box_sides, mode="reset", params={"randomization_seed": cfg.randomization_seed}
+                func=_randomize_box_sides,
+                mode="reset",
+                params={
+                    "left_positions": left_positions["box"],
+                    "right_positions": right_positions["box"],
+                    "randomization_seed": cfg.randomization_seed,
+                },
             )
 
         @configclass
@@ -353,7 +394,14 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         @configclass
         class CanSortRandomSubtaskTermsCfg(ObservationGroupCfg):
             # Track the can's reset-time identity, not whichever can is currently on the left.
-            handoff = ObservationTermCfg(func=_object_near_left_palm)
+            handoff = ObservationTermCfg(
+                func=_object_near_left_palm,
+                params={
+                    "min_height_by_color": {
+                        color: position[2] + 0.03 for color, position in left_positions["can"].items()
+                    }
+                },
+            )
             concatenate_terms = False
             enable_corruption = False
 
@@ -583,7 +631,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 usd_path=cfg.can_sort_blue_box_path, scale=BOX_SCALE, activate_contact_sensors=True
             ),
             initial_pose=Pose(
-                position_xyz=BOX_LEFT_POSITION,
+                position_xyz=left_positions["box"]["blue"],
                 rotation_xyzw=BOX_CLOCKWISE_90_ROTATION_XYZW,
             ),
         )
@@ -595,7 +643,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 usd_path=cfg.can_sort_red_box_path, scale=BOX_SCALE, activate_contact_sensors=True
             ),
             initial_pose=Pose(
-                position_xyz=BOX_RIGHT_POSITION,
+                position_xyz=right_positions["box"]["red"],
                 rotation_xyzw=BOX_CLOCKWISE_90_ROTATION_XYZW,
             ),
         )
@@ -609,7 +657,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 activate_contact_sensors=True,
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.02, 0.08, 0.8), metallic=0.0),
             ),
-            initial_pose=Pose(position_xyz=CAN_LEFT_POSITION),
+            initial_pose=Pose(position_xyz=left_positions["can"]["blue"]),
         )
         red_can = Object(
             name="red_can",
@@ -621,7 +669,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 activate_contact_sensors=True,
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.02, 0.02), metallic=0.0),
             ),
-            initial_pose=Pose(position_xyz=CAN_RIGHT_POSITION),
+            initial_pose=Pose(position_xyz=right_positions["can"]["red"]),
         )
         for asset in (blue_can, red_can, blue_box, red_box):
             asset.disable_reset_pose()

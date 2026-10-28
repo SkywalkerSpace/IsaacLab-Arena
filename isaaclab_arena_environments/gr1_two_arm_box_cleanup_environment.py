@@ -25,8 +25,10 @@ if TYPE_CHECKING:
 
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
-LID_POSITION = (-0.05, 0.30, 1.01)
-BIN_POSITION = (0.05, 0.55, 1.07)
+TABLE_SURFACE_HEIGHT = 1.0
+SPAWN_CLEARANCE = 0.002
+LID_POSITION_XY = (-0.05, 0.30)
+BIN_POSITION_XY = (0.05, 0.55)
 LID_SCALE = (0.8, 0.8, 0.8)
 BIN_SCALE = (0.5, 0.5, 0.5)
 
@@ -206,6 +208,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
+        from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
 
         # Isaac Lab Mimic calls this helper for TRANSFORM coordination. Some
         # Isaac Lab versions do not expose it from isaaclab.utils.math.
@@ -216,6 +219,14 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
 
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         source_events = EventCfg()
+        # Use scaled USD extents so each object's bottom starts just above the table.
+        positions = {}
+        for name, path, scale, xy in (
+            ("lid", cfg.lid_usd_path, LID_SCALE, LID_POSITION_XY),
+            ("bin", cfg.bin_usd_path, BIN_SCALE, BIN_POSITION_XY),
+        ):
+            box = compute_local_bounding_box_from_usd(path, scale)
+            positions[name] = (*xy, TABLE_SURFACE_HEIGHT + SPAWN_CLEARANCE - box.min_point[0, 2].item())
 
         @configclass
         class BoxCleanupSceneCfg(InteractiveSceneCfg):
@@ -256,11 +267,11 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             # Both arms finish the shared pick when the lid rises 5 cm above its initial height.
             grasp_left = ObservationTermCfg(
                 func=_object_lifted,
-                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.05},
+                params={"object_cfg": SceneEntityCfg("object"), "min_height": positions["lid"][2] + 0.05},
             )
             grasp_right = ObservationTermCfg(
                 func=_object_lifted,
-                params={"object_cfg": SceneEntityCfg("object"), "min_height": LID_POSITION[2] + 0.05},
+                params={"object_cfg": SceneEntityCfg("object"), "min_height": positions["lid"][2] + 0.05},
             )
             concatenate_terms = False
             enable_corruption = False
@@ -427,7 +438,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             spawner_cfg=source_scene.object.spawn.replace(
                 usd_path=cfg.lid_usd_path, scale=LID_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(position_xyz=LID_POSITION),
+            initial_pose=Pose(position_xyz=positions["lid"]),
         )
         bin_object = Object(
             name="object_2",
@@ -436,7 +447,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             spawner_cfg=source_scene.object.spawn.replace(
                 usd_path=cfg.bin_usd_path, scale=BIN_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(position_xyz=BIN_POSITION),
+            initial_pose=Pose(position_xyz=positions["bin"]),
         )
         # Source reset events restore and randomize both default poses without competing asset resets.
         lid.disable_reset_pose()
