@@ -294,14 +294,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         """Build the custom task from stock GR1 configs without importing the custom Lab environment."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
-        import isaaclab.utils.math as pose_utils
-        from isaaclab.envs.mimic_env_cfg import (
-            MimicEnvCfg,
-            SubTaskConfig,
-            SubTaskConstraintConfig,
-            SubTaskConstraintCoordinationScheme,
-            SubTaskConstraintType,
-        )
+        from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
         from isaaclab.managers import EventTermCfg, ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
         from isaaclab.scene import InteractiveSceneCfg
         from isaaclab.sensors import CameraCfg
@@ -320,13 +313,6 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         from isaaclab_arena.tasks.task_termination_cfg import TaskTerminationCfg
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
-
-        # Isaac Lab Mimic calls this helper for TRANSFORM coordination. Some
-        # Isaac Lab versions do not expose it from isaaclab.utils.math.
-        if not hasattr(pose_utils, "get_delta_object_pose"):
-            pose_utils.get_delta_object_pose = lambda cur_obj_pose, src_obj_pose: pose_utils.pose_in_A_to_pose_in_B(
-                pose_in_A=pose_utils.pose_inv(src_obj_pose), pose_A_in_B=cur_obj_pose
-            )
 
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
 
@@ -544,14 +530,6 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                         num_fixed_steps=0,
                         apply_noise_during_interpolation=False,
                     ),
-                ]
-                mimic_cfg.task_constraint_configs = [
-                    SubTaskConstraintConfig(
-                        eef_subtask_constraint_tuple=[("right", 0), ("left", 0)],
-                        constraint_type=SubTaskConstraintType.COORDINATION,
-                        coordination_scheme=SubTaskConstraintCoordinationScheme.TRANSFORM,
-                        coordination_synchronize_start=True,
-                    )
                 ]
                 return mimic_cfg
 
