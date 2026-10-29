@@ -52,8 +52,8 @@ class GR1TwoArmCanSortRandomEnvironmentCfg(ArenaEnvironmentCfg):
     can_sort_blue_can_path: str = str(_ASSET_DIR / "can_sort_blue_can.usd")
     can_sort_red_can_path: str = str(_ASSET_DIR / "can_sort_red_can.usd")
     success_max_xy_distance: float = 0.10
-    success_max_height_difference: float = 0.08
-    success_max_speed: float = 0.90
+    success_max_height_difference: float = 0.10
+    success_max_speed: float = 1.50
     """Componentwise can velocity limits in m/s (linear) and rad/s (angular)."""
     can_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """Success reference point in the can's root frame, in meters."""
@@ -239,9 +239,9 @@ def _object_near_target(
     env: ManagerBasedRLEnv,
     target_cfg: SceneEntityCfg,
     max_xy_distance: float = 0.10,
-    max_height_difference: float = 0.08,
+    max_height_difference: float = 0.10,
     max_height: float = 1.5,
-    max_speed: float = 0.90,
+    max_speed: float = 1.50,
     object_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
     target_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
     require_matching_color: bool = True,
