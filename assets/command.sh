@@ -44,7 +44,8 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink \
-  --arena_teleop_device openxr
+  --arena_teleop_device openxr \
+  --enable_cameras
 
 
 python submodules/IsaacLab/scripts/tools/replay_demos.py \
