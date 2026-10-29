@@ -649,6 +649,10 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                     collision_enabled=True, contact_offset=0.002, rest_offset=0.0
                 ),
             }
+            if name in ("cup", "bowl"):
+                addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
+                    static_friction=1.0, dynamic_friction=1.0
+                )
             if name in ("cup", "ball"):
                 addons["scale"] = asset_scales[name]
             asset = Object(

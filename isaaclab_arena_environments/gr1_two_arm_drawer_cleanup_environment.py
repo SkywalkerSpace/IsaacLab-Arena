@@ -23,7 +23,7 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.002
 MUG_POSITION_XY = (-0.2, 0.30)
-DRAWER_POSITION_XY = (0.10, 0.40)
+DRAWER_POSITION_XY = (0.0, 0.40)
 MUG_SCALE = (0.1, 0.1, 0.1)
 DRAWER_SCALE = (1.0, 1.0, 1.0)
 DRAWER_JOINT_NAME = "goal_slidey"
@@ -43,7 +43,7 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     success_max_height_difference: float = 0.08
     success_max_speed: float = 0.20
     """Componentwise mug velocity limits in m/s (linear) and rad/s (angular)."""
-    drawer_open_distance: float = 0.20
+    drawer_open_distance: float = 0.15
     """Minimum opening displacement of the drawer's negative-Y slide joint [m]."""
     mug_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """Offset from the mug's bottom reference point in its scaled root frame [m]."""
@@ -124,6 +124,12 @@ def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwar
             if child.IsA(UsdGeom.Mesh):
                 UsdPhysics.CollisionAPI.Apply(child).CreateCollisionEnabledAttr(True)
                 UsdPhysics.MeshCollisionAPI.Apply(child).CreateApproximationAttr("convexHull")
+        # The mug's colliders are added after spawn_from_usd applies its material.
+        if cfg.physics_material is not None:
+            material_path = cfg.physics_material_path
+            if not material_path.startswith("/"):
+                material_path = f"{mug_path}/{material_path}"
+            sim_utils.bind_physics_material(mug_path, material_path)
     return mug_prim
 
 
@@ -504,6 +510,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             mass_props=sim_utils.MassCfg(mass=0.15),
             mass_props_create_if_missing=True,
             activate_contact_sensors=True,
+            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
         )
         mug = Object(
             name="mug",

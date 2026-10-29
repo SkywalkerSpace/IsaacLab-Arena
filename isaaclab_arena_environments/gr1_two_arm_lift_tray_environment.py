@@ -537,7 +537,10 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             prim_path="{ENV_REGEX_NS}/Obj0",
             object_type=ObjectType.RIGID,
             spawner_cfg=source_scene.object.spawn.replace(
-                usd_path=cfg.lift_tray_obj0_path, scale=OBJ0_SCALE, activate_contact_sensors=True
+                usd_path=cfg.lift_tray_obj0_path,
+                scale=OBJ0_SCALE,
+                activate_contact_sensors=True,
+                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
             ),
             initial_pose=Pose(position_xyz=positions["obj0"]),
         )
@@ -546,7 +549,10 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             prim_path="{ENV_REGEX_NS}/Obj1",
             object_type=ObjectType.RIGID,
             spawner_cfg=source_scene.object.spawn.replace(
-                usd_path=cfg.lift_tray_obj1_path, scale=OBJ1_SCALE, activate_contact_sensors=True
+                usd_path=cfg.lift_tray_obj1_path,
+                scale=OBJ1_SCALE,
+                activate_contact_sensors=True,
+                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
             ),
             initial_pose=Pose(position_xyz=positions["obj1"]),
         )
