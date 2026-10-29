@@ -43,6 +43,8 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
 
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
+    debug_thumb_joints: bool = False  # --debug_thumb_joints
+    """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
     episode_length_s: float = 20.0
     randomization_seed: int | None = None
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
@@ -69,6 +71,9 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
                 f"Two-arm pouring requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
                 f"got {self.embodiment!r}."
             )
+        assert not self.debug_thumb_joints or self.embodiment == "gr1_pink", (
+            "debug_thumb_joints requires the gr1_pink action layout"
+        )
         for name in (
             "ball_in_bowl_max_xy_distance",
             "success_max_xy_distance",
@@ -133,6 +138,51 @@ def _spawn_pouring_robot(prim_path, cfg, translation=None, orientation=None, **k
             for collider in colliders:
                 UsdPhysics.CollisionAPI(collider).CreateCollisionEnabledAttr(True)
     return robot
+
+
+def _log_pouring_thumb_joints(env: ManagerBasedRLEnv, env_ids) -> None:
+    """Compare env_0 Pink hand inputs, commands, and measured thumb angles [deg]."""
+    # Interval events run after resets; avoid mixing a terminal command with a reset pose.
+    if int(env.episode_length_buf[0]) == 0:
+        return
+    robot = env.scene["robot"]
+    action = env.action_manager.get_term("upper_body_ik")
+    descriptor = action.IO_descriptor
+    hand_names = descriptor.hand_joint_names
+    arm_count = len(descriptor.pink_controller_joint_names)
+    hand_offset = action.action_dim - len(hand_names)
+    raw = action.raw_actions[0]
+    processed = action.processed_actions[0]
+    positions = robot.data.joint_pos.torch[0]
+    targets = robot.data.joint_pos_target.torch[0]
+    limits = robot.data.joint_pos_limits.torch[0]
+
+    if not getattr(env, "_pouring_thumb_layout_logged", False):
+        import inspect
+
+        print(f"[thumb-debug] Pink implementation: {inspect.getfile(type(action))}", flush=True)
+        print(f"[thumb-debug] Robot USD: {robot.cfg.spawn.usd_path}", flush=True)
+        for index, name in enumerate(hand_names):
+            print(f"[thumb-debug] action[{hand_offset + index}] -> {name}", flush=True)
+        print("[thumb-debug] All angles below are degrees; env=0 only.", flush=True)
+        env._pouring_thumb_layout_logged = True
+
+    for index, name in enumerate(hand_names):
+        if "_thumb_" not in name:
+            continue
+        joint_index = robot.joint_names.index(name)
+        input_angle = math.degrees(float(raw[hand_offset + index]))
+        processed_angle = math.degrees(float(processed[arm_count + index]))
+        target_angle = math.degrees(float(targets[joint_index]))
+        measured_angle = math.degrees(float(positions[joint_index]))
+        lower = math.degrees(float(limits[joint_index, 0]))
+        upper = math.degrees(float(limits[joint_index, 1]))
+        print(
+            f"[thumb-debug] {name}: input={input_angle:.2f} processed={processed_angle:.2f}"
+            f" target={target_angle:.2f} actual={measured_angle:.2f}"
+            f" error={target_angle - measured_angle:+.2f} limits=[{lower:.2f}, {upper:.2f}]",
+            flush=True,
+        )
 
 
 def _pouring_collision_body(root):
@@ -434,6 +484,16 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
 
         @configclass
         class PouringEventsCfg:
+            debug_thumb_joints = (
+                EventTermCfg(
+                    func=_log_pouring_thumb_joints,
+                    mode="interval",
+                    interval_range_s=(0.5, 0.5),
+                    is_global_time=True,
+                )
+                if cfg.debug_thumb_joints
+                else None
+            )
             # The layout event resets dynamic props; leave the kinematic pad at its initial pose.
             reset_all = EventTermCfg(
                 func=mdp.reset_root_state_uniform,
