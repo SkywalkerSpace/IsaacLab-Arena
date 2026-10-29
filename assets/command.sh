@@ -11,13 +11,13 @@ gr1_pick_place
 
 gr1_two_arm_box_cleanup, Use both hands to bring the box lid onto to the bin.
 
-gr1_two_arm_can_sort_random, Grasp the can then place that can inside the box of the same color.
-
-gr1_two_arm_coffee, Pick up the coffee pod and put it into the coffee machine.
-
 gr1_two_arm_drawer_cleanup, Open the drawer, pick up the cup and place it into the drawer, then close the drawer.
 
 gr1_two_arm_lift_tray, Pick up the block and place it on the tray, then pick up the tray with both hands.
+
+gr1_two_arm_can_sort_random, Grasp the can then place that can inside the box of the same color.
+
+gr1_two_arm_coffee, Pick up the coffee pod and put it into the coffee machine.
 
 gr1_two_arm_pouring, Grasp the cup containing the ball. Pour the ball into the bowl, then place the bowl on the pad with the ball still inside. 
 
@@ -25,11 +25,11 @@ gr1_two_arm_pouring, Grasp the cup containing the ball. Pour the ball into the b
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
-export TSAK_NAME=gr1_two_arm_can_sort_random
+export TSAK_NAME=
 
-export LANGUAGE_INSTRUCTION="Grasp the can then place that can inside the box of the same color."
+export LANGUAGE_INSTRUCTION=
 
-export NUM_GENERATED_DEMOS=100
+export NUM_GENERATED_DEMOS=1000
 
 export DATASET_DIR=datasets
 
@@ -39,7 +39,7 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
   --xr \
   --cloudxr_env cloudxrjs \
   --dataset_file datasets/${TSAK_NAME}_recorded.hdf5 \
-  --num_demos 5 \
+  --num_demos 100 \
   --num_success_steps 10 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
