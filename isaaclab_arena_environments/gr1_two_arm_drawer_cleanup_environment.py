@@ -25,7 +25,7 @@ SPAWN_CLEARANCE = 0.002
 MUG_POSITION_XY = (-0.20, 0.30)
 DRAWER_POSITION_XY = (-0.10, 0.60)
 MUG_SCALE = (0.1, 0.1, 0.1)
-DRAWER_SCALE = (1.0, 1.0, 1.0)
+DRAWER_SCALE = (0.8, 0.8, 0.8)
 DRAWER_JOINT_NAME = "goal_slidey"
 DRAWER_BODY_NAME = "drawer_link_joint_frame_0"
 
@@ -277,7 +277,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             )
             reset_drawer = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05)},
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("drawer"),
                 }
