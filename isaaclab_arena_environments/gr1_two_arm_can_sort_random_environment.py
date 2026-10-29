@@ -34,7 +34,7 @@ BOX_LEFT_POSITION_XY = (-0.39, 0.40)
 BOX_RIGHT_POSITION_XY = (-0.15, 0.40)
 BOX_SCALE = (0.6, 0.6, 0.6)
 CAN_SCALE = (0.6, 0.6, 1.2)
-CAN_LEFT_POSITION_XY = (0.1, 0.30)
+CAN_LEFT_POSITION_XY = (0.1, 0.35)
 CAN_RIGHT_POSITION_XY = (1.5, 0.5)
 
 
@@ -51,7 +51,7 @@ class GR1TwoArmCanSortRandomEnvironmentCfg(ArenaEnvironmentCfg):
     can_sort_red_box_path: str = str(_ASSET_DIR / "can_sort_red_box.usd")
     can_sort_blue_can_path: str = str(_ASSET_DIR / "can_sort_blue_can.usd")
     can_sort_red_can_path: str = str(_ASSET_DIR / "can_sort_red_can.usd")
-    success_max_xy_distance: float = 0.20
+    success_max_xy_distance: float = 0.10
     success_max_height_difference: float = 0.08
     success_max_speed: float = 0.90
     """Componentwise can velocity limits in m/s (linear) and rad/s (angular)."""
@@ -238,7 +238,7 @@ def _randomize_can_position(
 def _object_near_target(
     env: ManagerBasedRLEnv,
     target_cfg: SceneEntityCfg,
-    max_xy_distance: float = 0.20,
+    max_xy_distance: float = 0.10,
     max_height_difference: float = 0.08,
     max_height: float = 1.5,
     max_speed: float = 0.90,
