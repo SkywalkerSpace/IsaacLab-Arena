@@ -25,7 +25,7 @@ SPAWN_CLEARANCE = 0.002
 MUG_POSITION_XY = (-0.25, 0.30)
 DRAWER_POSITION_XY = (-0.20, 0.60)
 MUG_SCALE = (0.1, 0.1, 0.1)
-DRAWER_SCALE = (0.8, 0.8, 0.8)
+DRAWER_SCALE = (0.7, 0.7, 0.7)
 DRAWER_JOINT_NAME = "goal_slidey"
 DRAWER_BODY_NAME = "drawer_link_joint_frame_0"
 
@@ -113,7 +113,7 @@ def _object_lifted(
 
 
 def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Add convex mesh collision to the visual-only mug asset in every cloned environment."""
+    """Preserve authored mug collision, adding concave-safe collision when missing."""
     import isaaclab.sim as sim_utils
     from pxr import Usd, UsdGeom, UsdPhysics
 
@@ -123,7 +123,9 @@ def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwar
         for child in Usd.PrimRange(stage.GetPrimAtPath(mug_path)):
             if child.IsA(UsdGeom.Mesh):
                 UsdPhysics.CollisionAPI.Apply(child).CreateCollisionEnabledAttr(True)
-                UsdPhysics.MeshCollisionAPI.Apply(child).CreateApproximationAttr("convexHull")
+                mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(child)
+                if not mesh_collision.GetApproximationAttr().HasAuthoredValueOpinion():
+                    mesh_collision.CreateApproximationAttr("convexDecomposition")
         # The mug's colliders are added after spawn_from_usd applies its material.
         if cfg.physics_material is not None:
             material_path = cfg.physics_material_path
