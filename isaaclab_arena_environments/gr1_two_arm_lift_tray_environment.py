@@ -32,7 +32,7 @@ OBJ1_POSITION_XY = (0.18, 0.40)
 POT_POSITION_XY = (0.0, 0.2)
 OBJ0_SCALE = (1.0, 1.0, 1.0)
 OBJ1_SCALE = (1.0, 1.0, 1.0)
-POT_SCALE = (1.0, 1.0, 1.0)
+POT_SCALE = (1.0, 1.0, 0.2)
 
 
 @dataclass
