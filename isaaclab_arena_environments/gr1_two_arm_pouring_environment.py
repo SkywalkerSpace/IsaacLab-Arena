@@ -33,6 +33,7 @@ BOWL_POSITION_XY = (0.10, 0.35)
 PAD_POSITION_XY = (0.30, 0.35)
 CUP_GRASP_MAX_DISTANCE = 0.10
 CUP_GRASP_MIN_LIFT = 0.03
+# The cup USD's visual and collision walls are authored for 1 cm thickness at this XY scale.
 CUP_SCALE = (0.7, 0.7, 1.0)
 BALL_SCALE = (0.6, 0.6, 0.6)
 
