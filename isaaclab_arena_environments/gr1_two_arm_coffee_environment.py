@@ -45,8 +45,8 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     coffee_machine_path: str = str(_ASSET_DIR / "coffee_machine.usd")
     coffee_pod_path: str = str(_ASSET_DIR / "coffee_pod.usd")
-    success_max_distance: float = 0.05
-    """Maximum distance from the pod center to the lid's local bounding box, in meters."""
+    success_max_lid_angle: float = math.radians(10.0)
+    """Maximum lid hinge angle from fully closed for success, in radians."""
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
@@ -58,8 +58,8 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
                 f"Two-arm coffee requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
                 f"got {self.embodiment!r}."
             )
-        assert math.isfinite(self.success_max_distance) and self.success_max_distance > 0, (
-            "success_max_distance must be finite and positive"
+        assert math.isfinite(self.success_max_lid_angle) and 0 < self.success_max_lid_angle < math.pi / 2, (
+            "success_max_lid_angle must be finite and in (0, pi/2)"
         )
 
 
@@ -191,32 +191,17 @@ def _coffee_pod_near_left_palm(env: ManagerBasedRLEnv, min_height: float) -> tor
     return lifted & (torch.linalg.vector_norm(coffee_pod_pos - palm_pos, dim=1) < COFFEE_POD_GRASP_MAX_DISTANCE)
 
 
-def _coffee_pod_near_lid(
+def _coffee_machine_lid_closed(
     env: ManagerBasedRLEnv,
-    pod_center_offset: tuple[float, float, float],
-    lid_body_name: str,
-    lid_min: tuple[float, float, float],
-    lid_max: tuple[float, float, float],
-    max_distance: float,
+    lid_joint_name: str,
+    closed_angle: float,
+    max_angle: float,
 ) -> torch.Tensor:
-    """Detect the pod center near the moving lid's local bounding box."""
-    import torch
-
-    from isaaclab.utils.math import quat_apply, quat_apply_inverse
-
-    coffee_pod = env.scene["coffee_pod"]
+    """Detect the upper lid hinge near its fully closed position."""
     coffee_machine = env.scene["coffee_machine"]
-    lid_index = coffee_machine.data.body_names.index(lid_body_name)
-    # W is world; L/P are the lid-link/pod root frames.
-    q_W_L = coffee_machine.data.body_quat_w.torch[:, lid_index]
-    p_W_L = coffee_machine.data.body_pos_w.torch[:, lid_index]
-    q_W_P = coffee_pod.data.root_quat_w.torch
-    p_W_P = coffee_pod.data.root_pos_w.torch
-    center_P = p_W_P.new_tensor(pod_center_offset).expand_as(p_W_P)
-    p_W_center = p_W_P + quat_apply(q_W_P, center_P)
-    p_L_center = quat_apply_inverse(q_W_L, p_W_center - p_W_L)
-    closest_L = torch.clamp(p_L_center, min=p_L_center.new_tensor(lid_min), max=p_L_center.new_tensor(lid_max))
-    return torch.linalg.vector_norm(p_L_center - closest_L, dim=1) < max_distance
+    joint_index = coffee_machine.data.joint_names.index(lid_joint_name)
+    lid_angle = coffee_machine.data.joint_pos.torch[:, joint_index]
+    return (lid_angle - closed_angle).abs() <= max_angle
 
 
 def _configure_two_arm_coffee(
@@ -235,7 +220,7 @@ def _configure_two_arm_coffee(
 
 @register_environment
 class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironmentCfg]):
-    """Pick up the coffee pod with the left hand and bring it near the coffee machine's lid."""
+    """Pick up the coffee pod with the left hand and close the coffee machine's upper lid."""
 
     name = "gr1_two_arm_coffee"
     _legacy_argparse_cfg_type = GR1TwoArmCoffeeEnvironmentCfg
@@ -252,7 +237,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         )
 
     def build(self, cfg: GR1TwoArmCoffeeEnvironmentCfg) -> IsaacLabArenaEnvironment:
-        """Build the coffee-pod approach task from stock GR1 configs and two coffee USD assets."""
+        """Build the coffee-machine lid-closing task from stock GR1 configs and two coffee USD assets."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
         from isaaclab.actuators import ImplicitActuatorCfg
@@ -268,7 +253,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         from isaaclab.sensors import CameraCfg
         from isaaclab.utils.configclass import configclass
         from isaaclab_tasks.contrib.pick_place.pickplace_gr1t2_env_cfg import PickPlaceGR1T2SceneCfg
-        from pxr import Usd, UsdGeom, UsdPhysics
+        from pxr import Usd, UsdPhysics
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
@@ -321,17 +306,16 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
                 machine_contact_paths.append(f"{contact_paths['coffee_machine']}/{relative_path}")
         lid_prim = machine_stage.GetPrimAtPath(lid_targets[0])
         assert lid_prim.HasAPI(UsdPhysics.RigidBodyAPI), "Lid hinge must target a rigid body"
-        # Exclude the link's authored pose: the predicate uses its live articulation pose.
-        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), includedPurposes=[UsdGeom.Tokens.default_])
-        lid_box = bbox_cache.ComputeUntransformedBound(lid_prim).ComputeAlignedBox()
-        assert not lid_box.IsEmpty(), "Coffee machine lid must have nonempty geometry bounds"
-        pod_min, pod_max = bounds["coffee_pod"]
-        coffee_pod_near_lid_params = {
-            "pod_center_offset": tuple((low + high) / 2.0 for low, high in zip(pod_min, pod_max)),
-            "lid_body_name": lid_prim.GetName(),
-            "lid_min": tuple(lid_box.GetMin()),
-            "lid_max": tuple(lid_box.GetMax()),
-            "max_distance": cfg.success_max_distance,
+        # The lower hinge limit is fully closed; positive angles open the upper lid.
+        lid_closed_angle = math.radians(lid_joint.GetLowerLimitAttr().Get())
+        assert math.isfinite(lid_closed_angle), "Coffee machine lid must have a finite closed limit"
+        assert lid_open_angle - lid_closed_angle > cfg.success_max_lid_angle, (
+            "Initial lid opening must exceed the success tolerance"
+        )
+        coffee_machine_lid_closed_params = {
+            "lid_joint_name": lid_joint.GetPrim().GetName(),
+            "closed_angle": lid_closed_angle,
+            "max_angle": cfg.success_max_lid_angle,
         }
 
         @configclass
@@ -452,11 +436,11 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
                     timeout_s=self.episode_length_s,
                     success=[
                         CoffeeCompletionCriteria(
-                            name="coffee_pod_near_lid",
+                            name="coffee_machine_lid_closed",
                             predicate_sequence=[
                                 TerminationTermCfg(
-                                    func=_coffee_pod_near_lid,
-                                    params=coffee_pod_near_lid_params,
+                                    func=_coffee_machine_lid_closed,
+                                    params=coffee_machine_lid_closed_params,
                                 )
                             ],
                         )
@@ -586,8 +570,8 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         scene = Scene(assets=[table, *coffee_assets.values(), ground, light])
         task = TwoArmCoffeeTask(object=coffee_assets["coffee_pod"], episode_length_s=cfg.episode_length_s)
         task.task_description = (
-            "Pick up the coffee_pod with the left hand and bring it near the coffee_machine's upper lid. "
-            "The task succeeds when the pod center is within the configured distance of the moving lid's bounds. "
+            "Pick up the coffee_pod with the left hand and close the coffee_machine's upper lid. "
+            "The task succeeds when the lid hinge is within the configured angle of its fully closed position. "
             "The coffee_pod and coffee_machine independently move by up to 5 cm along each XY axis at reset; "
             "the machine base remains fixed during the episode, with a passive hinged lid initially open."
         )
