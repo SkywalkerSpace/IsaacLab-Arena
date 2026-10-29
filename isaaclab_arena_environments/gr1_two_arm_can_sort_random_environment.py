@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
-HANDOFF_MAX_DISTANCE = 0.05
+HANDOFF_MAX_DISTANCE = 0.10
 POSITION_XY_RANDOM_MAX = 0.05
 BOX_CLOCKWISE_90_ROTATION_XYZW = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))
 TABLE_SURFACE_HEIGHT = 1.0
