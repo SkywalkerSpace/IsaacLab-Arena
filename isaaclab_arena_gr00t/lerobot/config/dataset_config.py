@@ -19,6 +19,9 @@ class Gr00tDatasetConfig:
         default=None, metadata={"description": "Instruction given to the policy in natural language."}
     )
     hdf5_name: str = field(default=None, metadata={"description": "Name of the HDF5 file to use for the dataset."})
+    output_dir: Path | None = field(
+        default=None, metadata={"description": "Output LeRobot directory; defaults to a directory beside the HDF5 file."}
+    )
 
     # Mimic-generated HDF5 datafield
     # NOTE(xinjieyao, 2025-09-25): robot joint position must exist in the HDF5 file
@@ -142,7 +145,11 @@ class Gr00tDatasetConfig:
     def __post_init__(self):
 
         self.hdf5_file_path = self.data_root / self.hdf5_name
-        self.lerobot_data_dir = self.data_root / self.hdf5_name.replace(".hdf5", "") / "lerobot"
+        self.lerobot_data_dir = (
+            Path(self.output_dir)
+            if self.output_dir is not None
+            else self.data_root / self.hdf5_name.replace(".hdf5", "") / "lerobot"
+        )
 
         assert self.hdf5_file_path.exists(), f"{self.hdf5_file_path} does not exist"
         assert Path(self.policy_joints_config_path).exists(), f"{self.policy_joints_config_path} does not exist"

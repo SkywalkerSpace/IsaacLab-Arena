@@ -1,0 +1,22 @@
+# Copyright (c) 2026, The Isaac Lab Arena Project Developers (https://github.com/isaac-sim/IsaacLab-Arena/blob/main/CONTRIBUTORS.md).
+# All rights reserved.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# Shared robot, joint, camera, image and FPS settings.
+# hdf5_name, language_instruction and task_index in this base config are overridden.
+base_config: "gr1_two_arm_config.yaml"
+
+# Paths in THIS file are relative to this YAML file; absolute paths are also supported.
+# Paths INSIDE base_config keep their existing working-directory-relative semantics.
+# output_dir must not already exist; all HDF5 files are merged into this directory.
+output_dir: "../../../../datasets/multi_task/lerobot"
+
+datasets:
+  - hdf5_file_path: "../../../../datasets/two_arm_box_cleanup_generated_1000.hdf5"
+    language_instruction: "Use both hands to bring the box lid close to the bin."
+  - hdf5_file_path: "../../../../datasets/another_task_generated.hdf5"
+    language_instruction: "Replace this with the instruction for the second HDF5 file."
+
+# All sources must use the same robot embodiment and feature/camera layout.
+# Identical instructions share a task_index; different instructions get distinct indices.
