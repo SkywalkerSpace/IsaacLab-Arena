@@ -9,17 +9,17 @@ gr1_turn_stand_mixer_knob
 gr1_pick_place
 
 
-gr1_two_arm_box_cleanup, Use both hands to bring the box lid onto to the bin.
+gr1_two_arm_box_cleanup, move the box lid onto the box
 
-gr1_two_arm_drawer_cleanup, Open the drawer, pick up the cup and place it into the drawer, then close the drawer.
+gr1_two_arm_drawer_cleanup, pick the cup and open the drawer, then put the cup in the drawer and close the drawer
 
-gr1_two_arm_lift_tray, Pick up the block and place it on the tray, then pick up the tray with both hands.
+gr1_two_arm_lift_tray, put the two objects in the tray and then lift the tray
 
-gr1_two_arm_can_sort_random, Grasp the can then place that can inside the box of the same color.
+gr1_two_arm_can_sort_random, pick the can and put it in the box of the same color
 
-gr1_two_arm_coffee, Pick up the coffee pod and put it into the coffee machine.
+gr1_two_arm_coffee, insert the coffee pod into the coffee machine and close the lid
 
-gr1_two_arm_pouring, Grasp the cup containing the ball. Pour the ball into the bowl, then place the bowl on the pad with the ball still inside. 
+gr1_two_arm_pouring, pick the cup and open the drawer, then put the cup in the drawer and close the drawer
 
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
