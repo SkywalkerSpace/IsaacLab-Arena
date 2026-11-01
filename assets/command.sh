@@ -9,17 +9,17 @@ gr1_turn_stand_mixer_knob
 gr1_pick_place
 
 
-gr1_two_arm_box_cleanup, move the box lid onto the box
+gr1_two_arm_box_cleanup, "move the box lid onto the box"
 
-gr1_two_arm_drawer_cleanup, pick the cup and open the drawer, then put the cup in the drawer and close the drawer
+gr1_two_arm_drawer_cleanup, "pick the cup and open the drawer, then put the cup in the drawer and close the drawer"
 
-gr1_two_arm_lift_tray, put the two objects in the tray and then lift the tray
+gr1_two_arm_lift_tray, "put the two objects in the tray and then lift the tray"
 
-gr1_two_arm_can_sort_random, pick the can and put it in the box of the same color
+gr1_two_arm_can_sort_random, "pick the can and put it in the box of the same color"
 
-gr1_two_arm_coffee, insert the coffee pod into the coffee machine and close the lid
+gr1_two_arm_coffee, "insert the coffee pod into the coffee machine and close the lid"
 
-gr1_two_arm_pouring, pick the cup and open the drawer, then put the cup in the drawer and close the drawer
+gr1_two_arm_pouring, "pick the cup and open the drawer, then put the cup in the drawer and close the drawer"
 
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
@@ -82,16 +82,6 @@ python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_da
   --task ${TSAK_NAME} \
   --embodiment gr1_pink
   # --viz kit
-
-
-python submodules/IsaacLab/scripts/tools/replay_demos.py \
-  --viz kit \
-  --device cpu \
-  --enable_cameras \
-  --dataset_file datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
-  --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
-  --task ${TSAK_NAME} \
-  --embodiment gr1_pink
 
 
 python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
