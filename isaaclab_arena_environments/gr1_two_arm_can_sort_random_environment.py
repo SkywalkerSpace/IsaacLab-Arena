@@ -33,7 +33,7 @@ SPAWN_CLEARANCE = 0.002
 BOX_LEFT_POSITION_XY = (-0.49, 0.40)
 BOX_RIGHT_POSITION_XY = (-0.25, 0.40)
 BOX_SCALE = (0.6, 0.6, 0.6)
-CAN_SCALE = (0.6, 0.6, 1.2)
+CAN_SCALE = (0.6, 0.6, 0.8)
 CAN_LEFT_POSITION_XY = (0.05, 0.35)
 CAN_RIGHT_POSITION_XY = (1.5, 0.5)
 
@@ -677,7 +677,6 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 usd_path=cfg.can_sort_blue_can_path,
                 scale=CAN_SCALE,
                 activate_contact_sensors=True,
-                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.02, 0.08, 0.8), metallic=0.0),
             ),
             initial_pose=Pose(position_xyz=left_positions["can"]["blue"]),
@@ -690,7 +689,6 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 usd_path=cfg.can_sort_red_can_path,
                 scale=CAN_SCALE,
                 activate_contact_sensors=True,
-                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
                 visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=(0.8, 0.02, 0.02), metallic=0.0),
             ),
             initial_pose=Pose(position_xyz=right_positions["can"]["red"]),
