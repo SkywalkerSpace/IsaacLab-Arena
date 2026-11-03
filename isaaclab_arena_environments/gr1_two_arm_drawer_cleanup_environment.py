@@ -37,6 +37,8 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
     episode_length_s: float = 20.0
+    randomize_object_poses: bool = True
+    """Randomize object positions and rotations within the configured reset ranges."""
     drawer_cabinet_path: str = str(_ASSET_DIR / "drawer_cabinet.usd")
     drawer_mug_path: str = str(_ASSET_DIR / "drawer_mug.usd")
     success_max_xy_distance: float = 0.10
@@ -272,14 +274,18 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             reset_object = None
             reset_mug = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": (
+                        {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
+                        if cfg.randomize_object_poses
+                        else {}
+                    ),
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("mug"),
                 }
             )
             reset_drawer = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05)},
+                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05)} if cfg.randomize_object_poses else {},
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("drawer"),
                 }
@@ -536,7 +542,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             ),
             initial_pose=Pose(position_xyz=positions["drawer"]),
         )
-        # reset_all closes the drawer; the pose events independently randomize the mug and the cabinet.
+        # reset_all closes the drawer; pose events restore and optionally randomize the mug and cabinet.
         mug.disable_reset_pose()
         drawer.disable_reset_pose()
         ground = Object(

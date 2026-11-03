@@ -42,6 +42,8 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
     episode_length_s: float = 20.0
+    randomize_object_poses: bool = True
+    """Randomize object positions and rotations within the configured reset ranges."""
     lift_tray_obj0_path: str = str(_ASSET_DIR / "lift_tray_obj0.usd")
     lift_tray_obj1_path: str = str(_ASSET_DIR / "lift_tray_obj1.usd")
     lift_tray_pot_path: str = str(_ASSET_DIR / "lift_tray_pot.usd")
@@ -316,21 +318,33 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             reset_object = None
             reset_obj0 = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": (
+                        {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
+                        if cfg.randomize_object_poses
+                        else {}
+                    ),
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("obj0"),
                 }
             )
             reset_obj1 = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": (
+                        {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
+                        if cfg.randomize_object_poses
+                        else {}
+                    ),
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("obj1"),
                 }
             )
             reset_pot = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-math.radians(36), math.radians(36))},
+                    "pose_range": (
+                        {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-math.radians(36), math.radians(36))}
+                        if cfg.randomize_object_poses
+                        else {}
+                    ),
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("pot"),
                 }
@@ -565,7 +579,7 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             ),
             initial_pose=Pose(position_xyz=positions["pot"]),
         )
-        # Task reset events randomize all three default poses without competing asset resets.
+        # Task events restore all three default poses, optionally randomizing them, without competing asset resets.
         for obj in (obj0, obj1, pot):
             obj.disable_reset_pose()
         ground = Object(

@@ -40,6 +40,8 @@ class GR1TwoArmBoxCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
     episode_length_s: float = 20.0
+    randomize_object_poses: bool = True
+    """Randomize object positions and rotations within the configured reset ranges."""
     lid_usd_path: str = str(_ASSET_DIR / "box_cleanup_lid.usd")
     bin_usd_path: str = str(_ASSET_DIR / "box_cleanup_bin.usd")
     success_max_xy_distance: float = 0.10
@@ -240,14 +242,22 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
         class BoxCleanupEventsCfg(EventCfg):
             reset_object = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": (
+                        {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
+                        if cfg.randomize_object_poses
+                        else {}
+                    ),
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("object"),
                 }
             )
             reset_object_2 = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": (
+                        {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-1.57079, 1.57079)}
+                        if cfg.randomize_object_poses
+                        else {}
+                    ),
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("object_2"),
                 }
@@ -455,7 +465,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
             ),
             initial_pose=Pose(position_xyz=positions["bin"]),
         )
-        # Source reset events restore and randomize both default poses without competing asset resets.
+        # Source events restore both default poses, optionally randomizing them, without competing asset resets.
         lid.disable_reset_pose()
         bin_object.disable_reset_pose()
         ground = Object(

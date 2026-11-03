@@ -41,6 +41,8 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
     episode_length_s: float = 20.0
+    randomize_object_poses: bool = True
+    """Randomize object poses at reset; disable to restore their fixed initial poses."""
     randomization_seed: int | None = None
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     coffee_machine_path: str = str(_ASSET_DIR / "coffee_machine.usd")
@@ -139,8 +141,9 @@ def _randomize_coffee_layout(
     env_ids: torch.Tensor | None,
     positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
+    randomize_object_poses: bool = True,
 ) -> None:
-    """Jitter the coffee pod and machine independently by ±5 cm along each XY axis."""
+    """Reset the coffee pod and machine with optional independent ±5 cm XY jitter."""
     import secrets
     import torch
 
@@ -149,15 +152,17 @@ def _randomize_coffee_layout(
     env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=env.device).reshape(-1)
     if len(env_ids) == 0:
         return
-    if not hasattr(env, "_coffee_rng"):
-        seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
-        env._coffee_rng = torch.Generator(device=env.device).manual_seed(seed)
-        env._coffee_randomization_seed = seed
-        print(f"[INFO] Two-arm coffee layout randomization seed: {seed}")
-    # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
-    offsets = (
-        torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._coffee_rng) * 2.0 - 1.0
-    ) * POSITION_XY_RANDOM_MAX
+    offsets = torch.zeros((len(env_ids), 2, 2), device=env.device)
+    if randomize_object_poses:
+        if not hasattr(env, "_coffee_rng"):
+            seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
+            env._coffee_rng = torch.Generator(device=env.device).manual_seed(seed)
+            env._coffee_randomization_seed = seed
+            print(f"[INFO] Two-arm coffee layout randomization seed: {seed}")
+        # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
+        offsets = (
+            torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._coffee_rng) * 2.0 - 1.0
+        ) * POSITION_XY_RANDOM_MAX
     for offset_index, name in enumerate(("coffee_pod", "coffee_machine")):
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
@@ -385,7 +390,11 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             randomize_coffee_layout = EventTermCfg(
                 func=_randomize_coffee_layout,
                 mode="reset",
-                params={"positions": positions, "randomization_seed": cfg.randomization_seed},
+                params={
+                    "positions": positions,
+                    "randomization_seed": cfg.randomization_seed,
+                    "randomize_object_poses": cfg.randomize_object_poses,
+                },
             )
 
         @configclass
@@ -611,7 +620,14 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             "Pick up the coffee_pod with the left hand and close the coffee_machine's upper lid. "
             "The task succeeds when the lid hinge is within the configured angle of its fully closed position "
             "and the pod center is simultaneously within the configured distance of the moving lid's bounds. "
-            "The coffee_pod and coffee_machine independently move by up to 5 cm along each XY axis at reset; "
+        )
+        if cfg.randomize_object_poses:
+            task.task_description += (
+                "The coffee_pod and coffee_machine independently move by up to 5 cm along each XY axis at reset; "
+            )
+        else:
+            task.task_description += "The coffee_pod and coffee_machine reset to fixed initial poses; "
+        task.task_description += (
             "the machine base remains fixed during the episode, with a passive hinged lid initially open."
         )
         task.scene_config = CoffeeSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)

@@ -45,6 +45,8 @@ class GR1TwoArmCanSortRandomEnvironmentCfg(ArenaEnvironmentCfg):
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
     episode_length_s: float = 20.0
+    randomize_object_poses: bool = True
+    """Randomize object poses and color assignments at reset; disable to restore fixed initial poses."""
     randomization_seed: int | None = None
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     can_sort_blue_box_path: str = str(_ASSET_DIR / "can_sort_blue_box.usd")
@@ -160,8 +162,9 @@ def _randomize_pair(
     right_positions: dict[str, tuple[float, float, float]],
     rotation_xyzw: tuple[float, float, float, float],
     randomization_seed: int | None = None,
+    randomize_object_poses: bool = True,
 ) -> None:
-    """Swap colors and jitter XY, sharing the box offset and moving only the left can slot."""
+    """Reset a pair with optional color swaps and XY jitter, sharing the box offset."""
     import secrets
     import torch
 
@@ -173,16 +176,21 @@ def _randomize_pair(
     assignment_name = f"_{kind}_left_is_blue"
     if not hasattr(env, assignment_name):
         setattr(env, assignment_name, torch.ones(env.num_envs, dtype=torch.bool, device=env.device))
-    if not hasattr(env, "_can_sort_rng"):
-        seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
-        env._can_sort_rng = torch.Generator(device=env.device).manual_seed(seed)
-        env._can_sort_randomization_seed = seed
-        print(f"[INFO] Can-sort layout randomization seed: {seed}")
-    # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
-    rng = env._can_sort_rng
-    blue_is_left = torch.rand(len(env_ids), device=env.device, generator=rng) < 0.5
+    blue_is_left = torch.ones(len(env_ids), dtype=torch.bool, device=env.device)
+    offset_xy = torch.zeros((len(env_ids), 2), device=env.device)
+    if randomize_object_poses:
+        if not hasattr(env, "_can_sort_rng"):
+            seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
+            env._can_sort_rng = torch.Generator(device=env.device).manual_seed(seed)
+            env._can_sort_randomization_seed = seed
+            print(f"[INFO] Can-sort layout randomization seed: {seed}")
+        # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
+        rng = env._can_sort_rng
+        blue_is_left = torch.rand(len(env_ids), device=env.device, generator=rng) < 0.5
+        offset_xy = (
+            torch.rand((len(env_ids), 2), device=env.device, generator=rng) * 2.0 - 1.0
+        ) * POSITION_XY_RANDOM_MAX
     getattr(env, assignment_name)[env_ids] = blue_is_left
-    offset_xy = (torch.rand((len(env_ids), 2), device=env.device, generator=rng) * 2.0 - 1.0) * POSITION_XY_RANDOM_MAX
     for color, is_left in (("blue", blue_is_left), ("red", ~blue_is_left)):
         left = torch.tensor(left_positions[color], device=env.device).expand(len(env_ids), 3).clone()
         right = torch.tensor(right_positions[color], device=env.device).expand(len(env_ids), 3).clone()
@@ -203,8 +211,9 @@ def _randomize_box_sides(
     left_positions: dict[str, tuple[float, float, float]],
     right_positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
+    randomize_object_poses: bool = True,
 ) -> None:
-    """Swap boxes and translate both by the same XY offset in [-5, 5] cm per axis."""
+    """Reset boxes with optional side swaps and a shared XY offset in [-5, 5] cm per axis."""
     _randomize_pair(
         env,
         env_ids,
@@ -213,6 +222,7 @@ def _randomize_box_sides(
         right_positions,
         BOX_CLOCKWISE_90_ROTATION_XYZW,
         randomization_seed=randomization_seed,
+        randomize_object_poses=randomize_object_poses,
     )
 
 
@@ -222,8 +232,9 @@ def _randomize_can_position(
     left_positions: dict[str, tuple[float, float, float]],
     right_positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
+    randomize_object_poses: bool = True,
 ) -> None:
-    """Swap cans and jitter only the left can slot by [-5, 5] cm per XY axis."""
+    """Reset cans with optional side swaps and [-5, 5] cm XY jitter of the left slot."""
     _randomize_pair(
         env,
         env_ids,
@@ -232,6 +243,7 @@ def _randomize_can_position(
         right_positions,
         (0.0, 0.0, 0.0, 1.0),
         randomization_seed=randomization_seed,
+        randomize_object_poses=randomize_object_poses,
     )
 
 
@@ -364,6 +376,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                     "left_positions": left_positions["can"],
                     "right_positions": right_positions["can"],
                     "randomization_seed": cfg.randomization_seed,
+                    "randomize_object_poses": cfg.randomize_object_poses,
                 },
             )
             randomize_box_sides = EventTermCfg(
@@ -373,6 +386,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                     "left_positions": left_positions["box"],
                     "right_positions": right_positions["box"],
                     "randomization_seed": cfg.randomization_seed,
+                    "randomize_object_poses": cfg.randomize_object_poses,
                 },
             )
 
@@ -712,9 +726,14 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         task.task_description = (
             "Grasp the can initially at the left can position with the left hand, "
             "then place that can inside the box of the same color. Placing it in the other box fails. "
-            "The red and blue cans randomly swap can positions; "
-            "the red and blue boxes independently swap box positions."
         )
+        if cfg.randomize_object_poses:
+            task.task_description += (
+                "The red and blue cans randomly swap can positions; "
+                "the red and blue boxes independently swap box positions."
+            )
+        else:
+            task.task_description += "The cans and boxes reset to fixed initial poses, with blue on the left."
         task.scene_config = CanSortRandomSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         can_contact_paths = [
             blue_can.get_contact_sensor_prim_path(cfg.can_sort_blue_can_path),

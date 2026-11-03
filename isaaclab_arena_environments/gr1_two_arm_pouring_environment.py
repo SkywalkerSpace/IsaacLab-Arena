@@ -50,6 +50,8 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     debug_thumb_joints: bool = False  # --debug_thumb_joints
     """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
     episode_length_s: float = 20.0
+    randomize_object_positions: bool = True
+    """Jitter cup and bowl positions at reset; disable to restore their fixed initial positions."""
     randomization_seed: int | None = None
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     pouring_ball_path: str = str(_ASSET_DIR / "pouring_ball.usd")
@@ -326,8 +328,9 @@ def _randomize_pouring_layout(
     env_ids: torch.Tensor | None,
     positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
+    randomize_object_positions: bool = True,
 ) -> None:
-    """Jitter cup and bowl independently by ±5 cm in XY, keeping the ball in the cup and the pad fixed."""
+    """Reset props with optional ±5 cm XY jitter, keeping the ball in the cup and the pad fixed."""
     import secrets
     import torch
 
@@ -336,15 +339,17 @@ def _randomize_pouring_layout(
     env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=env.device).reshape(-1)
     if len(env_ids) == 0:
         return
-    if not hasattr(env, "_pouring_rng"):
-        seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
-        env._pouring_rng = torch.Generator(device=env.device).manual_seed(seed)
-        env._pouring_randomization_seed = seed
-        print(f"[INFO] Two-arm pouring layout randomization seed: {seed}")
-    # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
-    offsets = (
-        torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._pouring_rng) * 2.0 - 1.0
-    ) * POSITION_XY_RANDOM_MAX
+    offsets = torch.zeros((len(env_ids), 2, 2), device=env.device)
+    if randomize_object_positions:
+        if not hasattr(env, "_pouring_rng"):
+            seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
+            env._pouring_rng = torch.Generator(device=env.device).manual_seed(seed)
+            env._pouring_randomization_seed = seed
+            print(f"[INFO] Two-arm pouring layout randomization seed: {seed}")
+        # Do not reseed on reset: a fixed seed reproduces a sequence, not a single layout.
+        offsets = (
+            torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._pouring_rng) * 2.0 - 1.0
+        ) * POSITION_XY_RANDOM_MAX
     for name, offset_index in (("cup", 0), ("ball", 0), ("bowl", 1)):
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
@@ -614,7 +619,11 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             randomize_pouring_layout = EventTermCfg(
                 func=_randomize_pouring_layout,
                 mode="reset",
-                params={"positions": positions, "randomization_seed": cfg.randomization_seed},
+                params={
+                    "positions": positions,
+                    "randomization_seed": cfg.randomization_seed,
+                    "randomize_object_positions": cfg.randomize_object_positions,
+                },
             )
 
         @configclass
@@ -870,9 +879,17 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         task.task_description = (
             "Grasp the cup containing the ball with the left hand. Pour the ball into the bowl, "
             "then place the bowl on the pad with the ball still inside. "
-            "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
-            "the ball moves with the cup so that it starts inside, while the pad remains fixed."
         )
+        if cfg.randomize_object_positions:
+            task.task_description += (
+                "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
+                "the ball moves with the cup so that it starts inside, while the pad remains fixed."
+            )
+        else:
+            task.task_description += (
+                "The cup and bowl reset to fixed initial positions; "
+                "the ball starts inside the cup, while the pad remains fixed."
+            )
         task.scene_config = PouringSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         task.scene_config.ball_bowl_contact = ContactSensorCfg(
             prim_path=contact_paths["ball"], filter_prim_paths_expr=[contact_paths["bowl"]]
