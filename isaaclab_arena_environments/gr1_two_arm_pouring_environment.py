@@ -50,7 +50,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     debug_thumb_joints: bool = False  # --debug_thumb_joints
     """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
     episode_length_s: float = 20.0
-    randomize_object_positions: bool = True
+    randomize_object_poses: bool = True
     """Jitter cup and bowl positions at reset; disable to restore their fixed initial positions."""
     randomization_seed: int | None = None
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
@@ -328,7 +328,7 @@ def _randomize_pouring_layout(
     env_ids: torch.Tensor | None,
     positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
-    randomize_object_positions: bool = True,
+    randomize_object_poses: bool = True,
 ) -> None:
     """Reset props with optional ±5 cm XY jitter, keeping the ball in the cup and the pad fixed."""
     import secrets
@@ -340,7 +340,7 @@ def _randomize_pouring_layout(
     if len(env_ids) == 0:
         return
     offsets = torch.zeros((len(env_ids), 2, 2), device=env.device)
-    if randomize_object_positions:
+    if randomize_object_poses:
         if not hasattr(env, "_pouring_rng"):
             seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
             env._pouring_rng = torch.Generator(device=env.device).manual_seed(seed)
@@ -622,7 +622,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 params={
                     "positions": positions,
                     "randomization_seed": cfg.randomization_seed,
-                    "randomize_object_positions": cfg.randomize_object_positions,
+                    "randomize_object_poses": cfg.randomize_object_poses,
                 },
             )
 
@@ -880,7 +880,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             "Grasp the cup containing the ball with the left hand. Pour the ball into the bowl, "
             "then place the bowl on the pad with the ball still inside. "
         )
-        if cfg.randomize_object_positions:
+        if cfg.randomize_object_poses:
             task.task_description += (
                 "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
                 "the ball moves with the cup so that it starts inside, while the pad remains fixed."

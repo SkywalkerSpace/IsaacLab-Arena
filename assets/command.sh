@@ -45,7 +45,7 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink \
   --arena_teleop_device openxr
-  # --no-randomize_object_positions
+  # --no-randomize_object_poses
   # --enable_cameras
 
 
