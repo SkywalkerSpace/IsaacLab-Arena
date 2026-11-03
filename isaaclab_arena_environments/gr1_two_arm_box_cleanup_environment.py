@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
-TABLE_SURFACE_HEIGHT = 1.0
+TABLE_SURFACE_HEIGHT = 1.01
 SPAWN_CLEARANCE = 0.002
 LID_POSITION_XY = (-0.05, 0.30)
 BIN_POSITION_XY = (0.05, 0.55)

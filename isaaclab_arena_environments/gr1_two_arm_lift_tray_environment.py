@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
-TABLE_SURFACE_HEIGHT = 1.0
+TABLE_SURFACE_HEIGHT = 1.01
 SPAWN_CLEARANCE = 0.002
 OBJ0_POSITION_XY = (-0.18, 0.40)
 OBJ1_POSITION_XY = (0.18, 0.40)
@@ -330,7 +330,7 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             )
             reset_pot = source_events.reset_object.replace(
                 params={
-                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-1.57079, 1.57079)},
+                    "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-math.radians(36), math.radians(36))},
                     "velocity_range": {},
                     "asset_cfg": SceneEntityCfg("pot"),
                 }
