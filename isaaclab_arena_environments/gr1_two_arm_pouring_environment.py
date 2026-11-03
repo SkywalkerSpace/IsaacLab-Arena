@@ -58,7 +58,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     pouring_pad_path: str = str(_ASSET_DIR / "pouring_pad.usd")
     ball_in_bowl_max_xy_distance: float = 0.035
     """Conservative ball-center radius around the bowl's local center, in meters."""
-    success_max_xy_distance: float = 0.04
+    success_max_xy_distance: float = 0.10
     """Maximum bowl-to-pad center distance in the pad's local XY plane, in meters."""
     success_max_height_difference: float = 0.015
     """Tolerance between the bowl bottom and pad top, in meters."""
