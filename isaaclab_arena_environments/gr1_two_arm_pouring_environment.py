@@ -737,7 +737,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                         f"{name}_dropping": TerminationTermCfg(
                             func=_pouring_object_dropped, params={"object_name": name, "minimum_height": 0.5}
                         )
-                        for name in ("ball", "cup", "bowl")
+                        for name in ("ball", "bowl")
                     },
                 )
 
