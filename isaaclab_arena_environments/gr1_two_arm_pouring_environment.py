@@ -245,7 +245,7 @@ def _spawn_pouring_object(prim_path, cfg, translation=None, orientation=None, **
 
 
 def _spawn_pouring_cup(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Spawn a cup with low-friction inner walls and unchanged exterior contacts."""
+    """Spawn a dynamic rigid cup with enabled collisions and low-friction inner walls."""
     import isaaclab.sim as sim_utils
     from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade
 
@@ -253,6 +253,10 @@ def _spawn_pouring_cup(prim_path, cfg, translation=None, orientation=None, **kwa
     stage = sim_utils.get_current_stage()
     for path in sim_utils.find_matching_prim_paths(prim_path):
         root = stage.GetPrimAtPath(path)
+        body = _pouring_collision_body(root)
+        rigid_body = UsdPhysics.RigidBodyAPI(body)
+        rigid_body.CreateRigidBodyEnabledAttr(True)
+        rigid_body.CreateKinematicEnabledAttr(False)
         walls = []
         # Snapshot all walls before editing: the stock USD walls reference Wall_00.
         for prim in Usd.PrimRange(root):
@@ -294,6 +298,9 @@ def _spawn_pouring_cup(prim_path, cfg, translation=None, orientation=None, **kwa
             UsdShade.MaterialBindingAPI.Apply(inner_mesh.GetPrim()).Bind(
                 material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics"
             )
+        for prim in Usd.PrimRange(root):
+            if prim.HasAPI(UsdPhysics.CollisionAPI):
+                UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(True)
     return cup
 
 
