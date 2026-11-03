@@ -48,14 +48,14 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
   --enable_cameras
 
 
-python submodules/IsaacLab/scripts/tools/replay_demos.py \
-  --viz kit \
+python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   --device cpu \
   --enable_cameras \
   --dataset_file datasets/${TSAK_NAME}_recorded.hdf5 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink
+  # --viz kit 
 
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
