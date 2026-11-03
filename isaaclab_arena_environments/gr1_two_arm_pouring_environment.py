@@ -31,7 +31,9 @@ SPAWN_CLEARANCE = 0.002
 CUP_POSITION_XY = (-0.15, 0.40)
 BOWL_POSITION_XY = (0.10, 0.35)
 PAD_POSITION_XY = (0.30, 0.35)
-CUP_GRASP_MAX_DISTANCE = 0.10
+GRASP_MAX_PALM_DISTANCE = 0.10
+GRASP_MIN_FINGER_CURL = math.radians(20.0)
+GRASP_MIN_CURLED_FINGERS = 2
 CUP_GRASP_MIN_LIFT = 0.03
 # The cup USD's visual and collision walls are authored for 1 cm thickness at this XY scale.
 CUP_SCALE = (0.7, 0.7, 1.0)
@@ -281,16 +283,37 @@ def _pouring_object_dropped(env: ManagerBasedRLEnv, object_name: str, minimum_he
     return object_height < minimum_height
 
 
-def _cup_near_left_palm(env: ManagerBasedRLEnv, min_height: float) -> torch.Tensor:
-    """Use cup lift and left-palm proximity as a grasp proxy."""
+def _object_grasped(
+    env: ManagerBasedRLEnv,
+    object_name: str,
+    hand: str,
+    object_center_offset: tuple[float, float, float],
+    min_height: float | None = None,
+) -> torch.Tensor:
+    """Approximate a grasp using palm proximity, measured finger curl, and optional object lift."""
     import torch
 
+    from isaaclab.utils.math import quat_apply
+
     robot = env.scene["robot"]
-    palm_index = robot.data.body_names.index("left_hand_pitch_link")
-    cup_pos = env.scene["cup"].data.root_pos_w.torch
-    palm_pos = robot.data.body_pos_w.torch[:, palm_index]
-    lifted = cup_pos[:, 2] - env.scene.env_origins[:, 2] > min_height
-    return lifted & (torch.linalg.vector_norm(cup_pos - palm_pos, dim=1) < CUP_GRASP_MAX_DISTANCE)
+    prefix = {"left": "L", "right": "R"}[hand]
+    fingers = ("index", "middle", "ring", "pinky")
+    wrist_index = robot.data.body_names.index(f"{hand}_hand_pitch_link")
+    knuckle_indices = [robot.data.body_names.index(f"{prefix}_{finger}_proximal_link") for finger in fingers]
+    joint_indices = [robot.joint_names.index(f"{prefix}_{finger}_proximal_joint") for finger in fingers]
+    body_positions = robot.data.body_pos_w.torch
+    # Approximate the palm center halfway between the wrist and the four finger bases.
+    palm_pos = (body_positions[:, wrist_index] + body_positions[:, knuckle_indices].mean(dim=1)) / 2.0
+    object_data = env.scene[object_name].data
+    object_pos = object_data.root_pos_w.torch
+    center_offset = object_pos.new_tensor(object_center_offset).expand_as(object_pos)
+    object_center = object_pos + quat_apply(object_data.root_quat_w.torch, center_offset)
+    finger_curl = torch.abs(robot.data.joint_pos.torch[:, joint_indices])
+    fingers_closed = (finger_curl > GRASP_MIN_FINGER_CURL).sum(dim=1) >= GRASP_MIN_CURLED_FINGERS
+    grasped = fingers_closed & (torch.linalg.vector_norm(object_center - palm_pos, dim=1) < GRASP_MAX_PALM_DISTANCE)
+    if min_height is not None:
+        grasped &= object_pos[:, 2] - env.scene.env_origins[:, 2] > min_height
+    return grasped
 
 
 def _ball_in_bowl(
@@ -365,14 +388,10 @@ def _pouring_complete(
 def _configure_two_arm_pouring(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
 ) -> IsaacLabArenaManagerBasedRLEnvCfg:
-    """Apply 400 Hz physics while preserving 50 Hz control, glove feedback, and recording settings."""
+    """Preserve the base GR1 timing, glove feedback, and pouring camera recording settings."""
     from isaaclab_arena_environments.gr1_pick_place_environment import _configure_gr1_pick_place
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
-    # Resolve sustained finger contacts more often without changing the control or rendering rates.
-    env_cfg.sim.dt = 1 / 400
-    env_cfg.decimation = 8
-    env_cfg.sim.render_interval = 4
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
     return env_cfg
@@ -400,7 +419,12 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         """Build the pouring task from stock GR1 configs and the four pouring USD assets."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
-        from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
+        from isaaclab.envs.mimic_env_cfg import (
+            MimicEnvCfg,
+            SubTaskConfig,
+            SubTaskConstraintConfig,
+            SubTaskConstraintType,
+        )
         from isaaclab.managers import (
             EventTermCfg,
             ObservationGroupCfg,
@@ -531,7 +555,21 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         @configclass
         class PouringSubtaskTermsCfg(ObservationGroupCfg):
             cup_grasped = ObservationTermCfg(
-                func=_cup_near_left_palm, params={"min_height": positions["cup"][2] + CUP_GRASP_MIN_LIFT}
+                func=_object_grasped,
+                params={
+                    "object_name": "cup",
+                    "hand": "left",
+                    "object_center_offset": cup_center,
+                    "min_height": positions["cup"][2] + CUP_GRASP_MIN_LIFT,
+                },
+            )
+            bowl_grasped = ObservationTermCfg(
+                func=_object_grasped,
+                params={
+                    "object_name": "bowl",
+                    "hand": "right",
+                    "object_center_offset": (*bowl_center_xy, (bowl_min[2] + bowl_max[2]) / 2.0),
+                },
             )
             ball_in_bowl = ObservationTermCfg(func=_ball_in_bowl, params=ball_in_bowl_params)
             concatenate_terms = False
@@ -546,7 +584,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 if env_ids is None:
                     env_ids = slice(None)
                 terms = self.obs_buf["subtask_terms"]
-                return {name: terms[name][env_ids] for name in ("cup_grasped", "ball_in_bowl")}
+                return {name: terms[name][env_ids] for name in ("cup_grasped", "bowl_grasped", "ball_in_bowl")}
 
         @configclass
         class PouringCameraCfg(GR1T2CameraCfg):
@@ -631,14 +669,17 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 mimic_cfg.datagen_config.name = "gr1_two_arm_pouring_D0"
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(mimic_cfg.datagen_config, key, value)
-                # The left hand pours the cup; the right hand carries the receiving bowl to the pad.
-                object_refs = {"left": ("cup", "bowl", "cup"), "right": ("bowl", "bowl", "pad")}
-                term_signals = ("cup_grasped", "ball_in_bowl", None)
+                # Each hand has its own grasp event; the final segment uses the fixed pad frame.
+                object_refs = {"left": ("cup", "bowl", "pad"), "right": ("bowl", "bowl", "pad")}
+                term_signals = {
+                    "left": ("cup_grasped", "ball_in_bowl", None),
+                    "right": ("bowl_grasped", "ball_in_bowl", None),
+                }
                 for arm, refs in object_refs.items():
                     mimic_cfg.subtask_configs[arm] = [
                         SubTaskConfig(
                             object_ref=object_ref,
-                            subtask_term_signal=term_signals[index],
+                            subtask_term_signal=term_signals[arm][index],
                             first_subtask_start_offset_range=(0, 0),
                             subtask_term_offset_range=(0, 0),
                             selection_strategy="nearest_neighbor_object",
@@ -650,6 +691,14 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                         )
                         for index, object_ref in enumerate(refs)
                     ]
+                # Keep the right hand idle until the left hand finishes pouring.
+                mimic_cfg.task_constraint_configs = [
+                    SubTaskConstraintConfig(
+                        eef_subtask_constraint_tuple=[("left", 1), ("right", 0)],
+                        constraint_type=SubTaskConstraintType.SEQUENTIAL,
+                        sequential_min_time_diff=-1,
+                    )
+                ]
                 return mimic_cfg
 
         embodiment = self.asset_registry.get_asset_by_name(cfg.embodiment)(enable_cameras=cfg.enable_cameras)
