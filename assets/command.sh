@@ -39,13 +39,13 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
   --xr \
   --cloudxr_env cloudxrjs \
   --dataset_file datasets/${TSAK_NAME}_recorded.hdf5 \
-  --num_demos 100 \
+  --num_demos 200 \
   --num_success_steps 10 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink \
-  --arena_teleop_device openxr \
-  --enable_cameras
+  --arena_teleop_device openxr
+  # --enable_cameras
 
 
 python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
