@@ -38,6 +38,7 @@ CUP_GRASP_MIN_LIFT = 0.03
 # The cup USD's visual and collision walls are authored for 1 cm thickness at this XY scale.
 CUP_SCALE = (0.7, 0.7, 1.0)
 BALL_SCALE = (0.6, 0.6, 0.6)
+BALL_MASS = 0.10  # kg
 CUP_INNER_FRICTION = 0.1
 
 @dataclass
@@ -242,6 +243,22 @@ def _spawn_pouring_object(prim_path, cfg, translation=None, orientation=None, **
             # Speculative CCD also covers angular motion and does not require scene-level swept CCD.
             PhysxSchema.PhysxRigidBodyAPI.Apply(body).CreateEnableSpeculativeCCDAttr(True)
     return prim
+
+
+def _spawn_pouring_ball(prim_path, cfg, translation=None, orientation=None, **kwargs):
+    """Spawn a lightweight solid ball with inertia matching its scaled radius."""
+    import isaaclab.sim as sim_utils
+    from pxr import Gf, UsdPhysics
+
+    ball = _spawn_pouring_object(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
+    stage = sim_utils.get_current_stage()
+    for path in sim_utils.find_matching_prim_paths(prim_path):
+        body = _pouring_collision_body(stage.GetPrimAtPath(path))
+        mass = UsdPhysics.MassAPI.Apply(body)
+        mass.CreateMassAttr(BALL_MASS)
+        # Zero requests automatic inertia computation from the collider and the new mass.
+        mass.CreateDiagonalInertiaAttr(Gf.Vec3f(0.0))
+    return ball
 
 
 def _spawn_pouring_cup(prim_path, cfg, translation=None, orientation=None, **kwargs):
@@ -807,7 +824,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         pouring_assets = {}
         for name, path in asset_paths.items():
             addons = {
-                "func": _spawn_pouring_cup if name == "cup" else _spawn_pouring_object,
+                "func": {"ball": _spawn_pouring_ball, "cup": _spawn_pouring_cup}.get(name, _spawn_pouring_object),
                 "make_uninstanceable": True,
                 "rigid_props": sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
