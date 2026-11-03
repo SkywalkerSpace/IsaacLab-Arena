@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
-SPAWN_CLEARANCE = 0.001
+SPAWN_CLEARANCE = 0.000
 MUG_POSITION_XY = (-0.1, 0.30)
 DRAWER_POSITION_XY = (-0.20, 0.60)
 MUG_SCALE = (0.1, 0.1, 0.1)
