@@ -27,12 +27,12 @@ if TYPE_CHECKING:
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
-OBJ0_POSITION_XY = (-0.18, 0.45)
-OBJ1_POSITION_XY = (0.18, 0.45)
+OBJ0_POSITION_XY = (-0.15, 0.45)
+OBJ1_POSITION_XY = (0.15, 0.45)
 POT_POSITION_XY = (0.0, 0.25)
 OBJ0_SCALE = (0.7, 0.7, 0.7)
 OBJ1_SCALE = (0.7, 0.7, 0.7)
-POT_SCALE = (1.0, 1.0, 1.0)
+POT_SCALE = (1.2, 1.2, 1.0)
 
 
 @dataclass
