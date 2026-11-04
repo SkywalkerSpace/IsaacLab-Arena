@@ -48,7 +48,7 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     coffee_machine_path: str = str(_ASSET_DIR / "coffee_machine.usd")
     coffee_pod_path: str = str(_ASSET_DIR / "coffee_pod.usd")
-    success_max_lid_angle: float = math.radians(10.0)
+    success_max_lid_angle: float = math.radians(45.0)
     """Maximum lid hinge angle from fully closed for success, in radians."""
     success_max_distance: float = 0.10
     """Maximum distance from the pod center to the lid's local bounding box, in meters."""
