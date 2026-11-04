@@ -341,7 +341,7 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             reset_pot = source_events.reset_object.replace(
                 params={
                     "pose_range": (
-                        {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-math.radians(36), math.radians(36))}
+                        {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-math.radians(20), math.radians(20))}
                         if cfg.randomize_object_poses
                         else {}
                     ),
