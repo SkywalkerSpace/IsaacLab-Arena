@@ -580,7 +580,7 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             initial_pose=Pose(
                 position_xyz=positions["pot"],
                 # Passed directly to Isaac Lab's init_state.rot in (w, x, y, z) order.
-                rotation_xyzw=(math.cos(math.pi / 4), 0.0, 0.0, math.sin(math.pi / 4)),
+                rotation_xyzw=(0.0, 0.0, math.sin(math.pi / 4), math.cos(math.pi / 4)),
             ),
         )
         # Task events restore all three default poses, optionally randomizing them, without competing asset resets.
