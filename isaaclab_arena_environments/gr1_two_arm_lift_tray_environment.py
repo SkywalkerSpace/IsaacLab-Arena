@@ -432,7 +432,7 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
                     func=_objects_in_pot,
                     params={
                         **objects_in_pot_params,
-                        "min_pot_height": positions["pot"][2] + cfg.pot_lift_height,
+                        # "min_pot_height": positions["pot"][2] + cfg.pot_lift_height,
                     },
                 )
                 failures = {}
