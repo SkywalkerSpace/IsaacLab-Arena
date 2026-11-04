@@ -580,7 +580,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             else:
                 addons["func"] = _spawn_coffee_object
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
-                    static_friction=1.0, dynamic_friction=1.0
+                    static_friction=1.5, dynamic_friction=1.5
                 )
             asset = Object(
                 name=name,
