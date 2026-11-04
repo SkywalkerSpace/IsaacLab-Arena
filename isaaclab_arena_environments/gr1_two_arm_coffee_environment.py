@@ -27,6 +27,7 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 POSITION_XY_RANDOM_MAX = 0.05
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
+COFFEE_OBJECT_SCALE = (1.2, 1.2, 1.2)
 COFFEE_POD_POSITION_XY = (0.2, 0.40)
 COFFEE_MACHINE_POSITION_XY = (0.00, 0.55)
 COFFEE_MACHINE_ROTATION_XYZW = (0.0, 0.0, math.sin(5 * math.pi / 8), math.cos(5 * math.pi / 8))
@@ -311,7 +312,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
         contact_paths = {}
         for name, path in asset_paths.items():
             contact_paths[name] = f"{{ENV_REGEX_NS}}/{name.capitalize()}"
-            box = compute_local_bounding_box_from_usd(path, (1.0, 1.0, 1.0))
+            box = compute_local_bounding_box_from_usd(path, COFFEE_OBJECT_SCALE)
             bounds[name] = (box.min_point[0].tolist(), box.max_point[0].tolist())
         # Read actual USD extents rather than assuming the roots lie on the table surface.
         positions = {}
@@ -356,8 +357,8 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
             "max_angle": cfg.success_max_lid_angle,
             "pod_center_offset": tuple((low + high) / 2.0 for low, high in zip(pod_min, pod_max)),
             "lid_body_name": lid_prim.GetName(),
-            "lid_min": tuple(lid_box.GetMin()),
-            "lid_max": tuple(lid_box.GetMax()),
+            "lid_min": tuple(value * scale for value, scale in zip(lid_box.GetMin(), COFFEE_OBJECT_SCALE)),
+            "lid_max": tuple(value * scale for value, scale in zip(lid_box.GetMax(), COFFEE_OBJECT_SCALE)),
             "max_distance": cfg.success_max_distance,
         }
 
@@ -587,6 +588,7 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
                 prim_path=f"{{ENV_REGEX_NS}}/{name.capitalize()}",
                 object_type=ObjectType.ARTICULATION if is_machine else ObjectType.RIGID,
                 usd_path=path,
+                scale=COFFEE_OBJECT_SCALE,
                 spawn_cfg_addon=addons,
                 initial_pose=Pose(
                     position_xyz=positions[name],
