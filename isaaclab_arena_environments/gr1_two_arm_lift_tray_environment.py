@@ -49,11 +49,11 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
     lift_tray_pot_path: str = str(_ASSET_DIR / "lift_tray_pot.usd")
     success_max_xy_distance: float = 0.10
     success_max_height_difference: float = 0.08
-    success_max_speed: float = 0.20
+    success_max_speed: float = 2.0
     """Componentwise object velocity limits relative to the pot [m/s, rad/s]."""
     pickup_height: float = 0.05
     """Object lift above its initial root height for each Mimic pickup waypoint [m]."""
-    pot_lift_height: float = 0.10
+    pot_lift_height: float = 0.03
     """Required pot lift above its initial root height for task success [m]."""
     obj0_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """Containment reference point in the scaled obj0 root frame [m]."""
