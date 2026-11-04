@@ -577,7 +577,11 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
             spawner_cfg=source_scene.object.spawn.replace(
                 usd_path=cfg.lift_tray_pot_path, scale=POT_SCALE, activate_contact_sensors=True
             ),
-            initial_pose=Pose(position_xyz=positions["pot"]),
+            initial_pose=Pose(
+                position_xyz=positions["pot"],
+                # Passed directly to Isaac Lab's init_state.rot in (w, x, y, z) order.
+                rotation_xyzw=(math.cos(math.pi / 4), 0.0, 0.0, math.sin(math.pi / 4)),
+            ),
         )
         # Task events restore all three default poses, optionally randomizing them, without competing asset resets.
         for obj in (obj0, obj1, pot):
