@@ -268,6 +268,7 @@ def generate_info(
 
     info_template["robot_type"] = config.robot_type
     info_template["total_episodes"] = total_episodes
+    info_template["splits"] = {"train": f"0:{total_episodes}"}
     info_template["total_frames"] = total_frames
     info_template["total_tasks"] = total_tasks
     info_template["total_videos"] = total_videos

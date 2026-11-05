@@ -59,6 +59,13 @@ python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   # --viz kit 
 
 
+python assets/clean_lerobot_dataset.py \
+  --dataset datasets/${TSAK_NAME}_recorded/lerobot \
+  --all-train \
+  --apply \
+  --remove 65 77
+
+
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
   --device cpu \
   --input_file datasets/${TSAK_NAME}_recorded.hdf5 \
@@ -94,6 +101,7 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
 
 
 cd submodules/Isaac-GR00T
+export TENSORBOARD_LOGGING_DIR=../../tensorboard 
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
