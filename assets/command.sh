@@ -101,16 +101,15 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
 
 
 cd submodules/Isaac-GR00T
-export TENSORBOARD_LOGGING_DIR=../../tensorboard 
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output-dir ../../models/${TSAK_NAME}/ \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
-  --global-batch-size 16 \
-  --max-steps 30000 \
+  --global-batch-size 32 \
+  --max-steps 100000 \
   --num-gpus 1 \
-  --save-steps 1000 \
+  --save-steps 10000 \
   --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
   --no-tune-llm \
   --no-tune-visual \
@@ -119,8 +118,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataloader-num-workers 4 \
   --embodiment-tag GR1 \
   --color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
-  --save-total-limit 2 \
-  --use_wandb
+  --save-total-limit 5
+  # --use_wandb
 
 
 cd submodules/Isaac-GR00T
