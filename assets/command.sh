@@ -65,6 +65,10 @@ python assets/clean_lerobot_dataset.py \
   --apply \
   --original-count 200
 
+python assets/merge_lerobot_datasets.py \
+  --datasets datasets/${TSAK_NAME}_recorded/lerobot datasets/${TSAK_NAME}_generated/lerobot \
+  --output datasets/${TSAK_NAME}_merged/lerobot
+
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
   --device cpu \
