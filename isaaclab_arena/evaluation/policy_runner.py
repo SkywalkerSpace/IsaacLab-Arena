@@ -181,7 +181,7 @@ def main():
         # s.set("/rtx/pathtracing/optixDenoiser/enabled", False)
         # s.set("/rtx/pathtracing/spp", 32)
         # s.set("/rtx/pathtracing/totalSpp", 32)
-        # s.set("/rtx/pathtracing/maxBounces", 2)
+        # s.set("/rtx/pathtracing/maxBounces", 4)
 
         # s.set("/rtx/rendermode", "RaytracedLighting")
         # s.set("/rtx/directLighting/sampledLighting/enabled", False)

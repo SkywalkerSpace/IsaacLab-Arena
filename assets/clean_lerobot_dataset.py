@@ -3,13 +3,19 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""Remove episodes and compact a LeRobot v2.x dataset (one parquet/video per episode).
+"""Keep episodes listed in meta/episodes.jsonl and compact a LeRobot v2.x dataset.
 
-Examples (episode IDs are zero-based, not HDF5 demo names):
-    python assets/clean_lerobot_dataset.py --dataset /data/lerobot --remove 65 77
-    python assets/clean_lerobot_dataset.py --dataset /data/lerobot --remove 65 77 --apply
-    python assets/clean_lerobot_dataset.py --dataset /data/lerobot --remove 65,77 90-95 \
+Examples (original episode IDs are zero-based, in 0..original-count-1):
+    python assets/clean_lerobot_dataset.py --original-count 50
+    python assets/clean_lerobot_dataset.py --original-count 50 --apply
+    python assets/clean_lerobot_dataset.py --dataset /data/lerobot --original-count 100 \
         --output /data/lerobot_clean --apply
+
+Edit meta/episodes.jsonl first: its episode_index values are the KEEP list. IDs
+missing from that list are removed, including trailing IDs inferred from
+--original-count. Their parquet/videos may already be deleted. Retained files
+must exist. Rebuilding excludes removed files rather than unlinking source files
+before success; --output leaves the source untouched. No HDF5 demos are modified.
 
 The default is a read-only preview. --apply without --output replaces the dataset
 only after building a complete staged copy, retaining the original in a sibling
@@ -27,6 +33,9 @@ to GR1), optionally with --modality-config-path. Alternatively, use --drop-relat
 and regenerate them before training. Tasks keep their original IDs and mapping.
 Only known metadata is accepted; caches, README/model cards and other root extras
 are not copied into the rebuilt dataset. They remain in the source or backup.
+The derived meta/initial_actions.npz cache is also omitted; regenerate it from
+cleaned training data if needed. info.json totals/splits and numeric statistics
+are rebuilt; modality.json and task IDs/mapping remain unchanged.
 """
 
 import argparse
@@ -75,20 +84,9 @@ def write_jsonl(path, rows):
             stream.write(json.dumps(row, ensure_ascii=False, allow_nan=False) + "\n")
 
 
-def parse_ids(tokens):
-    """Parse IDs separated by spaces/commas and inclusive ranges such as 90-95."""
-    result = set()
-    for token in tokens:
-        for part in token.split(","):
-            match = re.fullmatch(r"(\d+)(?:-(\d+))?", part)
-            if not match:
-                raise ValueError(f"Invalid episode ID/range: {part!r}")
-            start = int(match[1])
-            end = int(match[2]) if match[2] else start
-            if end < start:
-                raise ValueError(f"Reversed episode range: {part}")
-            result.update(range(start, end + 1))
-    return result
+def removed_episode_ids(original_count, mapping):
+    """Return original IDs absent from the episodes.jsonl keep list."""
+    return sorted(set(range(original_count)) - set(mapping))
 
 
 def episode_path(root, pattern, episode_id, chunk_size, folder, video_key=None):
@@ -187,18 +185,17 @@ def prepare(args):
     ids = [ep["episode_index"] for ep in episodes]
     if any(type(ep_id) is not int or ep_id < 0 for ep_id in ids) or len(ids) != len(set(ids)):
         raise ValueError("Episode IDs must be unique non-negative integers.")
-    removed = parse_ids(args.remove)
-    if removed - set(ids):
-        raise ValueError(f"Episode IDs are not present in episodes.jsonl: {sorted(removed - set(ids))}")
-    kept = [ep for ep in episodes if ep["episode_index"] not in removed]
+    if type(args.original_count) is not int or args.original_count <= 0:
+        raise ValueError("--original-count must be a positive integer (original IDs are 0..N-1).")
+    outside = [ep_id for ep_id in ids if ep_id >= args.original_count]
+    if outside:
+        raise ValueError(f"Episode IDs outside --original-count {args.original_count}: {outside}")
+    kept = episodes
     if not kept:
-        raise ValueError("Refusing to remove every episode.")
+        raise ValueError("episodes.jsonl keep list is empty; refusing to remove every episode.")
     mapping = {ep["episode_index"]: new for new, ep in enumerate(kept)}
     info = copy.deepcopy(info)
-    if args.all_train:
-        info["splits"] = {"train": f"0:{len(kept)}"}
-    else:
-        info["splits"] = compact_splits(info.get("splits", {"train": f"0:{max(ids) + 1}"}), mapping)
+    info["splits"] = compact_splits(info.get("splits", {"train": f"0:{max(ids) + 1}"}), mapping)
     cameras = [key for key, feature in info["features"].items() if feature["dtype"] == "video"]
     numeric = []
     for key, feature in info["features"].items():
@@ -270,9 +267,10 @@ def rebuild(stage, plan, args):
     source, _, info, kept, mapping, tasks, numeric, cameras, old_episode_stats, video_stats_keys = plan
     meta = stage / "meta"
     meta.mkdir()
-    for filename in ("modality.json", "initial_actions.npz"):
-        if (source / "meta" / filename).is_file():
-            shutil.copy2(source / "meta" / filename, meta / filename)
+    # Modality describes feature slices, not episode IDs. Initial actions are a
+    # derived cache with no supported schema here; omit rather than copy stale data.
+    if (source / "meta/modality.json").is_file():
+        shutil.copy2(source / "meta/modality.json", meta / "modality.json")
     episodes = []
     episode_stats = []
     data_paths = []
@@ -350,8 +348,10 @@ def rebuild(stage, plan, args):
         if (source / "meta/relative_stats.json").exists() and not (meta / "relative_stats.json").is_file():
             raise ValueError("GR00T did not generate relative_stats.json; check the embodiment/modality configuration.")
     write_json(stage / "cleanup_report.json", {
-        "source": str(source), "removed_episode_ids": sorted(parse_ids(args.remove)),
+        "source": str(source), "original_count": args.original_count,
+        "removed_episode_ids": removed_episode_ids(args.original_count, mapping),
         "old_to_new_episode_index": mapping, "total_frames": offset,
+        "initial_actions_dropped": (source / "meta/initial_actions.npz").exists(),
         "relative_stats_dropped": (source / "meta/relative_stats.json").exists() and args.drop_relative_stats,
     })
 
@@ -359,11 +359,17 @@ def rebuild(stage, plan, args):
 def main():
     """Preview or apply episode removal with continuous episode/frame indexing."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dataset", type=Path, required=True, help="LeRobot root containing meta/info.json")
-    parser.add_argument("--remove", nargs="+", required=True, help="Original zero-based episode IDs: 65 77 or 65,77 90-95")
+    parser.add_argument(
+        "--dataset", type=Path,
+        default=Path("/Users/skywalker/Documents/exe/gr1_two_arm_can_sort_random_recorded_50_replay/lerobot"),
+        help="LeRobot root; meta/episodes.jsonl supplies the keep list (default: recorded_50_replay/lerobot)",
+    )
+    parser.add_argument(
+        "--original-count", type=int, required=True,
+        help="Original episode count N before filtering; IDs absent from episodes.jsonl in 0..N-1 are removed",
+    )
     parser.add_argument("--output", type=Path, help="Write a separate NEW directory instead of replacing the source")
     parser.add_argument("--apply", action="store_true", help="Apply changes; otherwise read-only preview")
-    parser.add_argument("--all-train", action="store_true", help="Replace existing splits with train covering ALL retained episodes")
     parser.add_argument("--gr00t-root", type=Path, help="GR00T checkout for optional relative-stat regeneration")
     parser.add_argument("--embodiment-tag", default="GR1", help="GR00T embodiment tag (default: GR1)")
     parser.add_argument("--modality-config-path", type=Path, help="Optional custom GR00T modality registration .py")
@@ -374,10 +380,13 @@ def main():
         plan = prepare(args)
         source, output, _, kept, mapping, *_ = plan
         print(f"Source: {source}\nDestination: {output}")
-        print(f"Remove original IDs: {sorted(parse_ids(args.remove))}")
+        print(f"Original episode count: {args.original_count}")
+        print(f"Remove original IDs absent from episodes.jsonl: {removed_episode_ids(args.original_count, mapping)}")
         print(f"Keep: {len(kept)} episodes, {sum(ep['length'] for ep in kept)} frames")
         print(f"New IDs: 0..{len(mapping) - 1}\nSplits: {plan[2]['splits']}")
         print("Root extras/caches are not copied; all original content remains in source/backup.")
+        if (source / "meta/initial_actions.npz").exists():
+            print("WARNING: initial_actions.npz cache will be omitted. Regenerate it from the cleaned dataset.")
         if args.drop_relative_stats:
             print("WARNING: relative_stats.json will be omitted. Regenerate before relative-action training.")
         if not args.apply:

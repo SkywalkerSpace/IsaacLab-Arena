@@ -56,14 +56,14 @@ python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink
+  # --validate_success_rate
   # --viz kit 
 
 
 python assets/clean_lerobot_dataset.py \
   --dataset datasets/${TSAK_NAME}_recorded/lerobot \
-  --all-train \
   --apply \
-  --remove 65 77
+  --original-count 200
 
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
