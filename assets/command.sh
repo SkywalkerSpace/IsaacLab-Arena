@@ -147,3 +147,6 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   ${TSAK_NAME} \
   --embodiment gr1_joint
   # --no-randomize_object_poses
+
+
+tensorboard --logdir  ../models/gr1_two_arm_pouring/runs/ --host 0.0.0.0 --port 1024
