@@ -763,11 +763,11 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 mimic_cfg.datagen_config.name = "gr1_two_arm_pouring_D0"
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(mimic_cfg.datagen_config, key, value)
-                # Each hand has its own grasp event; the final segment uses the fixed pad frame.
-                object_refs = {"left": ("cup", "bowl", "pad"), "right": ("bowl", "bowl", "pad")}
+                # The right hand waits for pouring before grasping the bowl; both arms finish at the pad.
+                object_refs = {"left": ("cup", "bowl", "pad"), "right": (None, "bowl", "pad")}
                 term_signals = {
                     "left": ("cup_grasped", "ball_in_bowl", None),
-                    "right": ("bowl_grasped", "ball_in_bowl", None),
+                    "right": ("ball_in_bowl", "bowl_grasped", None),
                 }
                 for arm, refs in object_refs.items():
                     mimic_cfg.subtask_configs[arm] = [
@@ -776,21 +776,21 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                             subtask_term_signal=term_signals[arm][index],
                             first_subtask_start_offset_range=(0, 0),
                             subtask_term_offset_range=(0, 0),
-                            selection_strategy="nearest_neighbor_object",
-                            selection_strategy_kwargs={"nn_k": 3},
-                            action_noise=0.003,
+                            selection_strategy="random" if object_ref is None else "nearest_neighbor_object",
+                            selection_strategy_kwargs={} if object_ref is None else {"nn_k": 3},
+                            action_noise=0.0 if object_ref is None else 0.003,
                             num_interpolation_steps=0 if index == 0 else 3,
                             num_fixed_steps=0,
                             apply_noise_during_interpolation=False,
                         )
                         for index, object_ref in enumerate(refs)
                     ]
-                # Keep the right hand idle until the left hand finishes pouring.
+                # Run the waiting segment concurrently, but finish it only after the left hand pours.
                 mimic_cfg.task_constraint_configs = [
                     SubTaskConstraintConfig(
                         eef_subtask_constraint_tuple=[("left", 1), ("right", 0)],
                         constraint_type=SubTaskConstraintType.SEQUENTIAL,
-                        sequential_min_time_diff=-1,
+                        sequential_min_time_diff=1,
                     )
                 ]
                 return mimic_cfg
