@@ -372,6 +372,9 @@ def _object_grasped(
     hand: str,
     object_center_offset: tuple[float, float, float],
     min_height: float | None = None,
+    max_palm_distance: float = GRASP_MAX_PALM_DISTANCE,
+    min_finger_curl: float = GRASP_MIN_FINGER_CURL,
+    min_curled_fingers: int = GRASP_MIN_CURLED_FINGERS,
 ) -> torch.Tensor:
     """Approximate a grasp using palm proximity, measured finger curl, and optional object lift."""
     import torch
@@ -392,8 +395,8 @@ def _object_grasped(
     center_offset = object_pos.new_tensor(object_center_offset).expand_as(object_pos)
     object_center = object_pos + quat_apply(object_data.root_quat_w.torch, center_offset)
     finger_curl = torch.abs(robot.data.joint_pos.torch[:, joint_indices])
-    fingers_closed = (finger_curl > GRASP_MIN_FINGER_CURL).sum(dim=1) >= GRASP_MIN_CURLED_FINGERS
-    grasped = fingers_closed & (torch.linalg.vector_norm(object_center - palm_pos, dim=1) < GRASP_MAX_PALM_DISTANCE)
+    fingers_closed = (finger_curl > min_finger_curl).sum(dim=1) >= min_curled_fingers
+    grasped = fingers_closed & (torch.linalg.vector_norm(object_center - palm_pos, dim=1) < max_palm_distance)
     if min_height is not None:
         grasped &= object_pos[:, 2] - env.scene.env_origins[:, 2] > min_height
     return grasped
@@ -656,6 +659,10 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                     "object_name": "bowl",
                     "hand": "right",
                     "object_center_offset": (*bowl_center_xy, (bowl_min[2] + bowl_max[2]) / 2.0),
+                    # Bowl rim grasps can use shallow finger curl and an offset palm.
+                    "max_palm_distance": 0.15,
+                    "min_finger_curl": math.radians(10.0),
+                    "min_curled_fingers": 1,
                 },
             )
             ball_in_bowl = ObservationTermCfg(func=_ball_in_bowl, params=ball_in_bowl_params)
