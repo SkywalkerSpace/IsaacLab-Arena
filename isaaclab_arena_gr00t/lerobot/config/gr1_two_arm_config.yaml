@@ -42,7 +42,7 @@ data_path: "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
 video_path: "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
 
 # Configuration file paths
-modality_template_path: "isaaclab_arena_gr00t/embodiments/gr1/modality.json"
+modality_template_path: "isaaclab_arena_gr00t/embodiments/gr1/modality_two_arm.json"
 modality_fname: "modality.json"
 episodes_fname: "episodes.jsonl"
 tasks_fname: "tasks.jsonl"

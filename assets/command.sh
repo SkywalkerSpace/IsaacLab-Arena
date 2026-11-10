@@ -109,7 +109,7 @@ cd submodules/Isaac-GR00T
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output-dir ../../models/${TSAK_NAME}/ \
-  --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
+  --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
   --global-batch-size 32 \
   --max-steps 100000 \
   --num-gpus 1 \
@@ -129,7 +129,7 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
 cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
-  --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_arms_only_data_config.py \
+  --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
   --model-path ../../models/checkpoint-30000 \
   --embodiment-tag GR1 \
   --device cuda --host 127.0.0.1 --port 5555
