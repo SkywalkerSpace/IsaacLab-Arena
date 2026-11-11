@@ -130,7 +130,7 @@ cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
-  --model-path ../../models/checkpoint-30000 \
+  --model-path ../../models/checkpoint-100000 \
   --embodiment-tag GR1 \
   --device cuda --host 127.0.0.1 --port 5555
 
