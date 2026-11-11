@@ -34,9 +34,10 @@ PAD_POSITION_XY = (0.30, 0.35)
 GRASP_MAX_PALM_DISTANCE = 0.10
 GRASP_MIN_FINGER_CURL = math.radians(20.0)
 GRASP_MIN_CURLED_FINGERS = 2
-CUP_GRASP_MIN_LIFT = 0.03
+CUP_GRASP_MIN_LIFT = 0.05  # Clear the 4 cm holder with an extra 1 cm of lift.
 # The cup USD's visual and collision walls are authored for 1 cm thickness at this XY scale.
 CUP_SCALE = (0.7, 0.7, 1.0)
+CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm without widening it.
 BALL_SCALE = (0.6, 0.6, 0.6)
 BALL_MASS = 0.10  # kg
 CUP_INNER_FRICTION = 0.1
@@ -58,7 +59,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     pouring_bowl_path: str = str(_ASSET_DIR / "pouring_bowl.usd")
     pouring_cup_path: str = str(_ASSET_DIR / "pouring_cup.usd")
     pouring_cup_holder_path: str = str(_ASSET_DIR / "pouring_cup_holder.usd")
-    """Independent 2 cm flared cup holder, sized for the default cup at CUP_SCALE."""
+    """Independent flared cup holder, scaled to 4 cm tall for the default cup at CUP_SCALE."""
     pouring_pad_path: str = str(_ASSET_DIR / "pouring_pad.usd")
     ball_in_bowl_max_xy_distance: float = 0.035
     """Conservative ball-center radius around the bowl's local center, in meters."""
@@ -591,7 +592,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         asset_scales = {
             "ball": BALL_SCALE,
             "cup": CUP_SCALE,
-            "cup_holder": (1.0, 1.0, 1.0),
+            "cup_holder": CUP_HOLDER_SCALE,
             "bowl": (1.0, 1.0, 1.0),
             "pad": (1.0, 1.0, 1.0),
         }
@@ -912,7 +913,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
                     static_friction=0.2, dynamic_friction=0.15, restitution=0.0, friction_combine_mode="min"
                 )
-            if name in ("cup", "ball"):
+            if name in ("cup", "ball", "cup_holder"):
                 addons["scale"] = asset_scales[name]
             asset = Object(
                 name=name,
