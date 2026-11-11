@@ -169,8 +169,8 @@ def main():
 
         # Configure RTX before creating the environment so rendering uses settings
         # that do not depend on NGX/DLSS.
-        # import carb.settings
 
+        # import carb.settings
         # s = carb.settings.get_settings()
         # s.set("/rtx/dldenoiser/enabled", False)
         # s.set("/rtx/post/dlss/execMode", 0)
@@ -179,17 +179,9 @@ def main():
 
         # s.set("/rtx/rendermode", "PathTracing")
         # s.set("/rtx/pathtracing/optixDenoiser/enabled", False)
-        # s.set("/rtx/pathtracing/spp", 32)
-        # s.set("/rtx/pathtracing/totalSpp", 32)
+        # s.set("/rtx/pathtracing/spp", 64)
+        # s.set("/rtx/pathtracing/totalSpp", 64)
         # s.set("/rtx/pathtracing/maxBounces", 4)
-
-        # s.set("/rtx/rendermode", "RaytracedLighting")
-        # s.set("/rtx/directLighting/sampledLighting/enabled", False)
-        # s.set("/rtx/indirectDiffuse/enabled", False)
-        # s.set("/rtx/ambientOcclusion/enabled", False)
-
-        # for k in ["/rtx/dldenoiser/enabled", "/rtx/post/dlss/execMode", "/rtx/post/aa/op", "/rtx/rendermode"]:
-        #     print('---',k, "=", s.get(k))
 
         # Get the policy-type flag before proceeding to other arguments
         add_policy_runner_arguments(args_parser)

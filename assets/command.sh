@@ -153,4 +153,20 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   # --no-randomize_object_poses
 
 
-tensorboard --logdir  ../models/gr1_two_arm_pouring/runs/ --host 0.0.0.0 --port 1024
+CUDA_VISIBLE_DEVICES=3 python assets/policy_runner_hdf5.py \
+  --dataset_file datasets/${TSAK_NAME}_recorded_200.hdf5 \
+  --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
+  --language_instruction "${LANGUAGE_INSTRUCTION}" \
+  --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_two_arm_config.yaml \
+  --viz none \
+  --remote_host 127.0.0.1 \
+  --remote_port 5555 \
+  --num_episodes 200 \
+  --enable_cameras \
+  --record_viewport_video \
+  --record_camera_video \
+  ${TSAK_NAME} \
+  --embodiment gr1_joint
+
+
+tensorboard --logdir  ../models/ --host 0.0.0.0 --port 1024
