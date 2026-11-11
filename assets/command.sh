@@ -101,6 +101,11 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --hdf5_name ${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
   --language_instruction "${LANGUAGE_INSTRUCTION}"
 
+
+python3 assets/filter_episodes_by_videos.py \
+  datasets/${TSAK_NAME}_recorded/lerobot/
+
+
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
