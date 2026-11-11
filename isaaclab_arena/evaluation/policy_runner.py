@@ -75,6 +75,7 @@ def rollout_policy(
     assert num_steps is None or num_episodes is None, "Only one of num_steps or num_episodes must be provided"
 
     pbar = None
+    steps_pbar = None
     try:
         if num_episodes is not None:
             env.unwrapped.configure_episode_limit(num_episodes)
@@ -86,7 +87,8 @@ def rollout_policy(
         if num_steps is not None:
             pbar = tqdm.tqdm(total=num_steps, desc="Steps", unit="step")
         else:
-            pbar = tqdm.tqdm(total=num_episodes, desc="Episodes (steps=0)", unit="episode")
+            pbar = tqdm.tqdm(total=num_episodes, desc="Episodes", unit="episode", position=0)
+            steps_pbar = tqdm.tqdm(desc="Steps", unit="step", position=1, mininterval=0, miniters=1)
 
         num_steps_completed = 0
 
@@ -97,9 +99,13 @@ def rollout_policy(
                 with Timer("env_step"):
                     obs, _, terminated, truncated, _ = env.step(actions)
 
+                num_steps_completed += 1
+                if steps_pbar is not None:
+                    steps_pbar.update(1)
+
                 reset_env_ids = env.unwrapped.reset_env_ids
                 if reset_env_ids.numel() > 0:
-                    print(f"Resetting policy state for env_ids: {reset_env_ids}")
+                    tqdm.tqdm.write(f"Resetting policy state for env_ids: {reset_env_ids}")
                     policy.reset(env_ids=reset_env_ids)
 
                 if terminated.any() or truncated.any():
@@ -109,10 +115,8 @@ def rollout_policy(
                             f"[Rank {get_local_rank()}/{get_world_size()}] Metrics:"
                             f" {metrics_to_plain_python_types(metrics)}"
                         )
-                num_steps_completed += 1
                 if num_episodes is not None:
                     completed_episode_count = env.unwrapped.completed_episode_count
-                    pbar.set_description(f"Episodes (steps={num_steps_completed})")
                     pbar.update(completed_episode_count - pbar.n)
                     if completed_episode_count == num_episodes:
                         break
@@ -122,9 +126,13 @@ def rollout_policy(
                     if num_steps_completed >= num_steps:
                         break
 
+        if steps_pbar is not None:
+            steps_pbar.close()
         pbar.close()
 
     except Exception as e:
+        if steps_pbar is not None:
+            steps_pbar.close()
         if pbar is not None:
             pbar.close()
         raise RuntimeError(f"Error rolling out policy: {e}")
