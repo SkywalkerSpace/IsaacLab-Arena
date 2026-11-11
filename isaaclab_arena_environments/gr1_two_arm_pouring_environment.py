@@ -362,6 +362,37 @@ def _randomize_pouring_layout(
         asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
 
 
+def _complete_pouring_replay_state(
+    state: dict,
+    positions: dict[str, tuple[float, float, float]],
+    env_origins: torch.Tensor,
+    is_relative: bool,
+) -> dict:
+    """Return recorded state with a stationary cup holder added only if it is missing.
+
+    The input dictionaries and tensors are not modified. Origins must correspond
+    to the environments being restored, in the same order as the recorded batch.
+    """
+    rigid_objects = state["rigid_object"]
+    if "cup_holder" in rigid_objects:
+        return state
+
+    cup_pose = rigid_objects["cup"]["root_pose"]
+    holder_pose = cup_pose.new_zeros(cup_pose.shape)
+    # Keep the reset-time XY alignment, but never copy the cup's height or tilt.
+    offset_xy = cup_pose.new_tensor(positions["cup_holder"][:2]) - cup_pose.new_tensor(positions["cup"][:2])
+    holder_pose[:, :2] = cup_pose[:, :2] + offset_xy
+    holder_pose[:, 2] = positions["cup_holder"][2]
+    if not is_relative:
+        holder_pose[:, 2] += env_origins[:, 2].to(device=cup_pose.device, dtype=cup_pose.dtype)
+    holder_pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
+    holder_state = {
+        "root_pose": holder_pose,
+        "root_velocity": cup_pose.new_zeros((cup_pose.shape[0], 6)),
+    }
+    return {**state, "rigid_object": {**rigid_objects, "cup_holder": holder_state}}
+
+
 def _pouring_object_dropped(env: ManagerBasedRLEnv, object_name: str, minimum_height: float = 0.5) -> torch.Tensor:
     """Detect a pouring object falling below an environment-local height [m]."""
     object_height = env.scene[object_name].data.root_pos_w.torch[:, 2] - env.scene.env_origins[:, 2]
@@ -685,6 +716,14 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             subtask_terms: PouringSubtaskTermsCfg = PouringSubtaskTermsCfg()
 
         class PouringMimicEnv(GR1T2MimicEnv):
+            def reset_to(self, state, env_ids, seed=None, is_relative=False):
+                """Restore demonstrations recorded before the independent cup holder was added."""
+                restore_env_ids = slice(None) if env_ids is None else env_ids
+                state = _complete_pouring_replay_state(
+                    state, positions, self.scene.env_origins[restore_env_ids], is_relative
+                )
+                return super().reset_to(state, env_ids, seed=seed, is_relative=is_relative)
+
             def get_subtask_term_signals(self, env_ids=None):
                 if env_ids is None:
                     env_ids = slice(None)
