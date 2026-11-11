@@ -109,13 +109,14 @@ def rollout_policy(
                             f"[Rank {get_local_rank()}/{get_world_size()}] Metrics:"
                             f" {metrics_to_plain_python_types(metrics)}"
                         )
+                num_steps_completed += 1
                 if num_episodes is not None:
                     completed_episode_count = env.unwrapped.completed_episode_count
+                    pbar.set_postfix(steps=num_steps_completed)
                     pbar.update(completed_episode_count - pbar.n)
                     if completed_episode_count == num_episodes:
                         break
                 # Break if number of steps is reached
-                num_steps_completed += 1
                 if num_steps is not None:
                     pbar.update(1)
                     if num_steps_completed >= num_steps:

@@ -144,7 +144,7 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --viz none \
   --remote_host 127.0.0.1 \
   --remote_port 5555 \
-  --num_episodes 5 \
+  --num_episodes 20 \
   --enable_cameras \
   --record_viewport_video \
   --record_camera_video \
