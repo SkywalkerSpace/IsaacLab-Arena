@@ -169,4 +169,15 @@ CUDA_VISIBLE_DEVICES=3 python assets/policy_runner_hdf5.py \
   --embodiment gr1_joint
 
 
-tensorboard --logdir  ../models/ --host 0.0.0.0 --port 1024
+cd submodules/Isaac-GR00T
+
+CUDA_VISIBLE_DEVICES=3 python gr00t/eval/open_loop_eval.py \
+  --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
+  --model-path ../../models/${TSAK_NAME}/checkpoint-100000 \
+  --embodiment-tag GR1 \
+  --traj-ids 0 1 2 3 4 \
+  --steps 300 \
+  --action-horizon 16
+
+
+tensorboard --logdir  ./models --host 0.0.0.0 --port 1024
