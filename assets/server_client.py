@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from datetime import datetime, timezone
 import io
+import json
 import logging
 import time
 from typing import Any, Callable
@@ -57,7 +59,12 @@ class PolicyServer:
     """
 
     def __init__(
-        self, policy: BasePolicy, host: str = "*", port: int = 5555, api_token: str = None
+        self,
+        policy: BasePolicy,
+        host: str = "*",
+        port: int = 5555,
+        api_token: str = None,
+        access_log: bool = False,
     ):
         self.policy = policy
         self.running = True
@@ -66,6 +73,8 @@ class PolicyServer:
         self.socket.bind(f"tcp://{host}:{port}")
         self._endpoints: dict[str, EndpointHandler] = {}
         self.api_token = api_token
+        self.access_log = access_log
+        self._request_count = 0
 
         # Register the ping endpoint by default
         self.register_endpoint("ping", self._handle_ping, requires_input=False)
@@ -109,22 +118,39 @@ class PolicyServer:
             return True  # No token required
         return request.get("api_token") == self.api_token
 
+    def _log_access(self, event: str, **fields: Any) -> None:
+        """Print one flushed JSON record without request payloads or credentials."""
+        if self.access_log:
+            record = {
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                "request_id": self._request_count,
+                "event": event,
+                **fields,
+            }
+            print("[access] " + json.dumps(record, ensure_ascii=True), flush=True)
+
     def run(self):
         addr = self.socket.getsockopt_string(zmq.LAST_ENDPOINT)
         print(f"Server is ready and listening on {addr}")
         while self.running:
+            started_at = None
+            endpoint = None
+            status = "error"
             try:
                 message = self.socket.recv()
+                started_at = time.perf_counter()
+                self._request_count += 1
+                self._log_access("received", request_bytes=len(message))
                 request = MsgSerializer.from_bytes(message)
+                endpoint = request.get("endpoint", "get_action")
 
                 # Validate token before processing request
                 if not self._validate_token(request):
+                    status = "unauthorized"
                     self.socket.send(
                         MsgSerializer.to_bytes({"error": "Unauthorized: Invalid API token"})
                     )
                     continue
-
-                endpoint = request.get("endpoint", "get_action")
 
                 if endpoint not in self._endpoints:
                     raise ValueError(f"Unknown endpoint: {endpoint}")
@@ -136,12 +162,23 @@ class PolicyServer:
                     else handler.handler()
                 )
                 self.socket.send(MsgSerializer.to_bytes(result))
+                status = "ok"
             except Exception as e:
+                status = "error"
                 print(f"Error in server: {e}")
                 import traceback
 
                 print(traceback.format_exc())
                 self.socket.send(MsgSerializer.to_bytes({"error": str(e)}))
+            finally:
+                if started_at is not None:
+                    self._log_access(
+                        "completed",
+                        endpoint=endpoint[:128] if isinstance(endpoint, str) else "<invalid>",
+                        status=status,
+                        request_bytes=len(message),
+                        duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+                    )
 
     @staticmethod
     def start_server(policy: BasePolicy, port: int, api_token: str = None):
