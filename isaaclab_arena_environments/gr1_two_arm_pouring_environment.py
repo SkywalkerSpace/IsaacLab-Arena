@@ -359,7 +359,8 @@ def _randomize_pouring_layout(
         pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
         asset = env.scene[name]
         asset.write_root_pose_to_sim(pose, env_ids=env_ids)
-        asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
+        if name != "cup_holder":
+            asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
 
 
 def _complete_pouring_replay_state(
@@ -391,6 +392,13 @@ def _complete_pouring_replay_state(
         "root_velocity": cup_pose.new_zeros((cup_pose.shape[0], 6)),
     }
     return {**state, "rigid_object": {**rigid_objects, "cup_holder": holder_state}}
+
+
+def _prepare_pouring_replay_state(env, state, env_ids, is_relative):
+    """Complete legacy pouring states at the shared regular/Mimic reset entry point."""
+    restore_env_ids = slice(None) if env_ids is None else env_ids
+    positions = env.cfg.events.randomize_pouring_layout.params["positions"]
+    return _complete_pouring_replay_state(state, positions, env.scene.env_origins[restore_env_ids], is_relative)
 
 
 def _pouring_object_dropped(env: ManagerBasedRLEnv, object_name: str, minimum_height: float = 0.5) -> torch.Tensor:
@@ -511,6 +519,7 @@ def _configure_two_arm_pouring(
     from isaaclab_arena_environments.gr1_pick_place_environment import _configure_gr1_pick_place
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
+    env_cfg.reset_to_state_preprocessor = _prepare_pouring_replay_state
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
     return env_cfg
@@ -559,6 +568,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
+        from isaaclab_arena.assets.stationary_kinematic_object import StationaryKinematicObject
         from isaaclab_arena.embodiments.common.arm_mode import ArmMode
         from isaaclab_arena.embodiments.gr1t2.gr1t2 import GR1T2CameraCfg, GR1T2MimicEnv
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -716,14 +726,6 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             subtask_terms: PouringSubtaskTermsCfg = PouringSubtaskTermsCfg()
 
         class PouringMimicEnv(GR1T2MimicEnv):
-            def reset_to(self, state, env_ids, seed=None, is_relative=False):
-                """Restore demonstrations recorded before the independent cup holder was added."""
-                restore_env_ids = slice(None) if env_ids is None else env_ids
-                state = _complete_pouring_replay_state(
-                    state, positions, self.scene.env_origins[restore_env_ids], is_relative
-                )
-                return super().reset_to(state, env_ids, seed=seed, is_relative=is_relative)
-
             def get_subtask_term_signals(self, env_ids=None):
                 if env_ids is None:
                     env_ids = slice(None)
@@ -919,6 +921,9 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 object_type=ObjectType.RIGID,
                 usd_path=path,
                 spawn_cfg_addon=addons,
+                asset_cfg_addon=(
+                    {"class_type": StationaryKinematicObject} if name in ("pad", "cup_holder") else {}
+                ),
                 initial_pose=Pose(position_xyz=positions[name]),
             )
             asset.disable_reset_pose()
