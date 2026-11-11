@@ -86,7 +86,7 @@ def rollout_policy(
         if num_steps is not None:
             pbar = tqdm.tqdm(total=num_steps, desc="Steps", unit="step")
         else:
-            pbar = tqdm.tqdm(total=num_episodes, desc="Episodes", unit="episode")
+            pbar = tqdm.tqdm(total=num_episodes, desc="Episodes (steps=0)", unit="episode")
 
         num_steps_completed = 0
 
@@ -112,7 +112,7 @@ def rollout_policy(
                 num_steps_completed += 1
                 if num_episodes is not None:
                     completed_episode_count = env.unwrapped.completed_episode_count
-                    pbar.set_postfix(steps=num_steps_completed)
+                    pbar.set_description(f"Episodes (steps={num_steps_completed})")
                     pbar.update(completed_episode_count - pbar.n)
                     if completed_episode_count == num_episodes:
                         break
