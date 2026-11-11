@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.envs.mimic_env_cfg import MimicEnvCfg
 from isaaclab.managers import RecorderManagerBaseCfg
@@ -96,6 +98,9 @@ class IsaacLabArenaManagerBasedRLEnvCfg(ManagerBasedRLEnvCfg):
 
     task_progress: TaskProgressCfg | None = None
     """Task progress settings, independent of the termination and trajectory recorder configs."""
+
+    reset_to_state_preprocessor: Callable[..., dict] | None = None
+    """Optional (env, state, env_ids, is_relative) callback returning state before recorded-state restoration."""
 
     # Task language description
     task_description: str | None = None

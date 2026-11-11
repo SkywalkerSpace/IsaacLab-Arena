@@ -568,7 +568,6 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
 
         from isaaclab_arena.assets.object import Object
         from isaaclab_arena.assets.object_type import ObjectType
-        from isaaclab_arena.assets.stationary_kinematic_object import StationaryKinematicObject
         from isaaclab_arena.embodiments.common.arm_mode import ArmMode
         from isaaclab_arena.embodiments.gr1t2.gr1t2 import GR1T2CameraCfg, GR1T2MimicEnv
         from isaaclab_arena.environments.isaaclab_arena_environment import IsaacLabArenaEnvironment
@@ -921,9 +920,6 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 object_type=ObjectType.RIGID,
                 usd_path=path,
                 spawn_cfg_addon=addons,
-                asset_cfg_addon=(
-                    {"class_type": StationaryKinematicObject} if name in ("pad", "cup_holder") else {}
-                ),
                 initial_pose=Pose(position_xyz=positions[name]),
             )
             asset.disable_reset_pose()

@@ -172,6 +172,12 @@ class IsaacLabArenaManagerBasedRLEnv(ManagerBasedRLEnv):
         self._reset_env_ids = self._reset_env_ids[:0]
         return super().reset(seed=seed, env_ids=env_ids, options=options)
 
+    def reset_to(self, state, env_ids, seed=None, is_relative=False):
+        """Apply task-specific recorded-state compatibility in both regular and Mimic environments."""
+        if self.cfg.reset_to_state_preprocessor is not None:
+            state = self.cfg.reset_to_state_preprocessor(self, state, env_ids, is_relative)
+        return super().reset_to(state, env_ids, seed=seed, is_relative=is_relative)
+
     def step(self, action: torch.Tensor) -> VecEnvStepReturn:
         """Step all environments and report completions only for assigned episodes."""
         active_before_step = self._active_episode_mask.clone()
