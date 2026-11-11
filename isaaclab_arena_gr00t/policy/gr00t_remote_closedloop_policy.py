@@ -67,6 +67,15 @@ class Gr00tRemoteClosedloopPolicyCfg(Gr00tBasePolicyCfg):
     remote_api_token: str | None = None
     """Optional policy-server API token."""
 
+    remote_timeout_ms: int = 60000
+    """Timeout for each ZeroMQ send or receive, in milliseconds."""
+
+    remote_max_retries: int = 5
+    """Retries after a timeout; set to zero for stateful servers such as ReplayPolicy."""
+
+    remote_retry_backoff_sec: float = 1.0
+    """Initial retry delay in seconds, doubled on each retry (up to 64x)."""
+
     scheduler: ActionSchedulerType = ActionSchedulerType.CHUNK
     """Action scheduler used to consume inference chunks."""
 
@@ -131,6 +140,9 @@ class Gr00tRemoteClosedloopPolicy(PolicyBase[Gr00tRemoteClosedloopPolicyCfg]):
             port=config.remote_port,
             api_token=config.remote_api_token,
             strict=False,
+            timeout_ms=config.remote_timeout_ms,
+            max_retries=config.remote_max_retries,
+            retry_backoff_sec=config.remote_retry_backoff_sec,
         )
         self._client: Any | None = client
         if not client.ping():
