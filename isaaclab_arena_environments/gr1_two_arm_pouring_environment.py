@@ -57,6 +57,8 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     pouring_ball_path: str = str(_ASSET_DIR / "pouring_ball.usd")
     pouring_bowl_path: str = str(_ASSET_DIR / "pouring_bowl.usd")
     pouring_cup_path: str = str(_ASSET_DIR / "pouring_cup.usd")
+    pouring_cup_holder_path: str = str(_ASSET_DIR / "pouring_cup_holder.usd")
+    """Independent 2 cm flared cup holder, sized for the default cup at CUP_SCALE."""
     pouring_pad_path: str = str(_ASSET_DIR / "pouring_pad.usd")
     ball_in_bowl_max_xy_distance: float = 0.035
     """Conservative ball-center radius around the bowl's local center, in meters."""
@@ -330,7 +332,7 @@ def _randomize_pouring_layout(
     randomization_seed: int | None = None,
     randomize_object_poses: bool = True,
 ) -> None:
-    """Reset props with optional ±5 cm XY jitter, keeping the ball in the cup and the pad fixed."""
+    """Reset props with optional XY jitter, moving the cup, ball, and holder together; keep the pad fixed."""
     import secrets
     import torch
 
@@ -350,7 +352,7 @@ def _randomize_pouring_layout(
         offsets = (
             torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._pouring_rng) * 2.0 - 1.0
         ) * POSITION_XY_RANDOM_MAX
-    for name, offset_index in (("cup", 0), ("ball", 0), ("bowl", 1)):
+    for name, offset_index in (("cup", 0), ("ball", 0), ("cup_holder", 0), ("bowl", 1)):
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
         pose[:, :2] += offsets[:, offset_index]
@@ -502,7 +504,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         )
 
     def build(self, cfg: GR1TwoArmPouringEnvironmentCfg) -> IsaacLabArenaEnvironment:
-        """Build the pouring task from stock GR1 configs and the four pouring USD assets."""
+        """Build the pouring task from stock GR1 configs and pouring USD assets, including a cup holder."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
         from isaaclab.envs.mimic_env_cfg import (
@@ -542,12 +544,14 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         asset_paths = {
             "ball": cfg.pouring_ball_path,
             "cup": cfg.pouring_cup_path,
+            "cup_holder": cfg.pouring_cup_holder_path,
             "bowl": cfg.pouring_bowl_path,
             "pad": cfg.pouring_pad_path,
         }
         asset_scales = {
             "ball": BALL_SCALE,
             "cup": CUP_SCALE,
+            "cup_holder": (1.0, 1.0, 1.0),
             "bowl": (1.0, 1.0, 1.0),
             "pad": (1.0, 1.0, 1.0),
         }
@@ -569,6 +573,13 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         ball_min, ball_max = bounds["ball"]
         ball_radius = max(high - low for low, high in zip(ball_min, ball_max)) / 2.0
         cup_center = tuple((low + high) / 2.0 for low, high in zip(cup_min, cup_max))
+        holder_min, holder_max = bounds["cup_holder"]
+        holder_center_xy = tuple((holder_min[index] + holder_max[index]) / 2.0 for index in range(2))
+        positions["cup_holder"] = (
+            positions["cup"][0] + cup_center[0] - holder_center_xy[0],
+            positions["cup"][1] + cup_center[1] - holder_center_xy[1],
+            TABLE_SURFACE_HEIGHT - holder_min[2],
+        )
         assert cup_max[2] - cup_min[2] > 2.0 * ball_radius, "The ball must fit below the cup rim"
         positions["ball"] = tuple(value + offset for value, offset in zip(positions["cup"], cup_center))
         bowl_min, bowl_max = bounds["bowl"]
@@ -604,7 +615,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 if cfg.debug_thumb_joints
                 else None
             )
-            # The layout event resets dynamic props; leave the kinematic pad at its initial pose.
+            # Reset the props and kinematic cup holder together; leave the pad at its initial pose.
             reset_all = EventTermCfg(
                 func=mdp.reset_root_state_uniform,
                 mode="reset",
@@ -844,8 +855,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 "make_uninstanceable": True,
                 "rigid_props": sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
-                    kinematic_enabled=name == "pad",
-                    disable_gravity=False,
+                    kinematic_enabled=name in ("pad", "cup_holder"),
+                    disable_gravity=name == "cup_holder",
                     solver_position_iteration_count=32,
                     solver_velocity_iteration_count=8,
                 ),
@@ -856,6 +867,10 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             if name in ("cup", "bowl"):
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
                     static_friction=1.0, dynamic_friction=1.0
+                )
+            if name == "cup_holder":
+                addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
+                    static_friction=0.2, dynamic_friction=0.15, restitution=0.0, friction_combine_mode="min"
                 )
             if name in ("cup", "ball"):
                 addons["scale"] = asset_scales[name]
@@ -890,7 +905,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         if cfg.randomize_object_poses:
             task.task_description += (
                 "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
-                "the ball moves with the cup so that it starts inside, while the pad remains fixed."
+                "the ball and cup holder move with the cup so that it starts inside the holder, "
+                "with the ball inside the cup, while the pad remains fixed."
             )
         else:
             task.task_description += (
