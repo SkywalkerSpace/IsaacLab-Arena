@@ -7,7 +7,6 @@ import h5py
 import json
 import multiprocessing as mp
 import numpy as np
-import shutil
 import subprocess
 import time
 import traceback
@@ -53,6 +52,17 @@ def _get_video_pairs(config: Gr00tDatasetConfig) -> list[tuple[str, str]]:
         raise ValueError("video_name_lerobot contains duplicate video keys.")
 
     return list(zip(camera_names, video_names))
+
+
+def generate_modality(config: Gr00tDatasetConfig) -> dict[str, Any]:
+    """Load the modality template with video entries matching the configured cameras."""
+    modality = load_json(config.modality_template_path)
+    modality["video"] = {}
+    for _, video_key in _get_video_pairs(config):
+        modality_name = video_key.rsplit(".", 1)[-1]
+        assert modality_name not in modality["video"], f"Duplicate video modality name: {modality_name}"
+        modality["video"][modality_name] = {"original_key": video_key}
+    return modality
 
 
 def wait_for_video_completion(video_path: str, max_wait_time: int = 60, check_interval: float = 0.5) -> bool:
@@ -588,7 +598,7 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
 
     # 3.3. Generate modality.json
     modality_path = lerobot_meta_dir / config.modality_fname
-    shutil.copy(config.modality_template_path, modality_path)
+    dump_json(generate_modality(config), modality_path, indent=4)
 
     try:
         # Check for errors in the error queue
