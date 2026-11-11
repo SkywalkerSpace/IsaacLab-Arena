@@ -142,6 +142,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
 
 cd IsaacLab-Arena
 
+# action_chunk_length
+
 CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
   --language_instruction "${LANGUAGE_INSTRUCTION}" \
