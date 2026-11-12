@@ -115,8 +115,9 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output-dir ../../models/${TSAK_NAME}/ \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
-  --global-batch-size 32 \
-  --max-steps 100000 \
+  --global-batch-size 16 \
+  --gradient-accumulation-steps 8 \
+  --max-steps 60000 \
   --num-gpus 1 \
   --save-steps 10000 \
   --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
@@ -126,8 +127,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --tune-diffusion-model \
   --dataloader-num-workers 4 \
   --embodiment-tag GR1 \
-  --color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
-  --save-total-limit 5
+  --save-total-limit 3
+  #--color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
   # --use_wandb
 
 
