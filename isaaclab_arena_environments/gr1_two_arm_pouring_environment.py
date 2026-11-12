@@ -906,8 +906,9 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                 ),
             }
             if name in ("cup", "bowl"):
+                friction = 1.5 if name == "cup" else 1.0
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
-                    static_friction=1.0, dynamic_friction=1.0
+                    static_friction=friction, dynamic_friction=friction
                 )
             if name == "cup_holder":
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
