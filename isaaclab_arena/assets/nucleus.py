@@ -11,6 +11,6 @@ ARENA_STAGING_NUCLEUS_DIR: str = "omniverse://isaac-dev.ov.nvidia.com/Isaac/Isaa
 """Internal upload location, available immediately before the staging S3 mirror syncs."""
 
 # TODO(2026.07.14, Point Arena assets to the production bucket before release)
-ARENA_NUCLEUS_DIR: str = ISAACLAB_NUCLEUS_DIR.replace("omniverse-content-production", "omniverse-content-staging")
+ARENA_NUCLEUS_DIR: str = ISAACLAB_NUCLEUS_DIR
 # TODO(2026.08.12, Fill request to sync Replicator kitchens to the production bucket once Sim 6.1 is released)
 ISAAC_STAGING_NUCLEUS_DIR: str = ISAAC_NUCLEUS_DIR.replace("omniverse-content-production", "omniverse-content-staging")
