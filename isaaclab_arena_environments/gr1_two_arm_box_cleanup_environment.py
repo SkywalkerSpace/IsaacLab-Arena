@@ -155,6 +155,8 @@ def _configure_two_arm_box_cleanup(
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
     env_cfg = set_control_rate_50hz(env_cfg)
+    # Pose reset events use Isaac Lab's global RNG, seeded once when the environment starts.
+    env_cfg.seed = 42
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
     return env_cfg

@@ -115,6 +115,49 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
     return table_prim
 
 
+def _reset_tray_objects(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor | None,
+    pose_range: dict[str, tuple[float, float]],
+    seed: int = 42,
+) -> None:
+    """Reset both objects, independently swapping their XY slots with 50% probability per environment."""
+    import torch
+
+    import isaaclab.envs.mdp as mdp
+    from isaaclab.managers import SceneEntityCfg
+
+    if env_ids is None:
+        env_ids = torch.arange(env.num_envs, device=env.device)
+    env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=env.device).reshape(-1)
+    if len(env_ids) == 0:
+        return
+    if not hasattr(env, "_lift_tray_swap_rng"):
+        # Seed once so resets advance a reproducible sequence instead of repeating one layout.
+        env._lift_tray_swap_rng = torch.Generator(device=env.device).manual_seed(seed)
+    swap = torch.rand(len(env_ids), device=env.device, generator=env._lift_tray_swap_rng) < 0.5
+    for name, source_xy, target_xy in (
+        ("obj0", OBJ0_POSITION_XY, OBJ1_POSITION_XY),
+        ("obj1", OBJ1_POSITION_XY, OBJ0_POSITION_XY),
+    ):
+        for should_swap in (False, True):
+            selected_ids = env_ids[swap == should_swap]
+            if len(selected_ids) == 0:
+                continue
+            object_pose_range = dict(pose_range)
+            if should_swap:
+                for axis, source, target in zip(("x", "y"), source_xy, target_xy):
+                    lower, upper = object_pose_range.get(axis, (0.0, 0.0))
+                    object_pose_range[axis] = (lower + target - source, upper + target - source)
+            mdp.reset_root_state_uniform(
+                env,
+                selected_ids,
+                pose_range=object_pose_range,
+                velocity_range={},
+                asset_cfg=SceneEntityCfg(name),
+            )
+
+
 def _object_lifted(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
@@ -316,26 +359,15 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
         class LiftTrayEventsCfg(EventCfg):
             # Disable the inherited reset for the stock asset named "object".
             reset_object = None
-            reset_obj0 = source_events.reset_object.replace(
+            reset_objects = source_events.reset_object.replace(
+                func=_reset_tray_objects,
                 params={
                     "pose_range": (
                         {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
                         if cfg.randomize_object_poses
                         else {}
                     ),
-                    "velocity_range": {},
-                    "asset_cfg": SceneEntityCfg("obj0"),
-                }
-            )
-            reset_obj1 = source_events.reset_object.replace(
-                params={
-                    "pose_range": (
-                        {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
-                        if cfg.randomize_object_poses
-                        else {}
-                    ),
-                    "velocity_range": {},
-                    "asset_cfg": SceneEntityCfg("obj1"),
+                    "seed": 42,
                 }
             )
             reset_pot = source_events.reset_object.replace(

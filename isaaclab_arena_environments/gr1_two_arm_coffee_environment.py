@@ -44,8 +44,8 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     episode_length_s: float = 20.0
     randomize_object_poses: bool = True
     """Randomize object poses at reset; disable to restore their fixed initial poses."""
-    randomization_seed: int | None = None
-    """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
+    randomization_seed: int | None = 42
+    """Layout seed, independent of Arena's seed; defaults to 42. None samples a fresh seed on each launch."""
     coffee_machine_path: str = str(_ASSET_DIR / "coffee_machine.usd")
     coffee_pod_path: str = str(_ASSET_DIR / "coffee_pod.usd")
     success_max_lid_angle: float = math.radians(45.0)

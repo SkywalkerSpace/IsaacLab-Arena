@@ -47,8 +47,8 @@ class GR1TwoArmCanSortRandomEnvironmentCfg(ArenaEnvironmentCfg):
     episode_length_s: float = 20.0
     randomize_object_poses: bool = True
     """Randomize object poses and color assignments at reset; disable to restore fixed initial poses."""
-    randomization_seed: int | None = None
-    """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
+    randomization_seed: int | None = 42
+    """Layout seed, independent of Arena's seed; defaults to 42. None samples a fresh seed on each launch."""
     can_sort_blue_box_path: str = str(_ASSET_DIR / "can_sort_blue_box.usd")
     can_sort_red_box_path: str = str(_ASSET_DIR / "can_sort_red_box.usd")
     can_sort_blue_can_path: str = str(_ASSET_DIR / "can_sort_blue_can.usd")

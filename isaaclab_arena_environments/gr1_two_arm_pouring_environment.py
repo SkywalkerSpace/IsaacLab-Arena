@@ -61,8 +61,8 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     episode_length_s: float = 20.0
     randomize_object_poses: bool = True
     """Jitter cup/bowl XY and sample a shared 0–90 degree cup/holder yaw; disable for fixed poses."""
-    randomization_seed: int | None = None
-    """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
+    randomization_seed: int | None = 42
+    """Layout seed, independent of Arena's seed; defaults to 42. None samples a fresh seed on each launch."""
     pouring_ball_path: str = str(_ASSET_DIR / "pouring_ball.usd")
     pouring_bowl_path: str = str(_ASSET_DIR / "pouring_bowl.usd")
     pouring_cup_path: str = str(_ASSET_DIR / "pouring_rectangular_cup.usd")
