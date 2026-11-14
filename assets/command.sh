@@ -29,17 +29,20 @@ export TSAK_NAME=
 
 export LANGUAGE_INSTRUCTION=
 
+export NUM_RECORDED_DEMOS=300
+
 export NUM_GENERATED_DEMOS=1000
 
 export DATASET_DIR=datasets
+
 
 python submodules/IsaacLab/scripts/tools/record_demos.py \
   --device cpu \
   --viz kit \
   --xr \
   --cloudxr_env cloudxrjs \
-  --dataset_file datasets/${TSAK_NAME}_recorded.hdf5 \
-  --num_demos 200 \
+  --dataset_file datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
+  --num_demos ${NUM_RECORDED_DEMOS} \
   --num_success_steps 10 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
@@ -52,7 +55,7 @@ python submodules/IsaacLab/scripts/tools/record_demos.py \
 python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   --device cpu \
   --enable_cameras \
-  --dataset_file datasets/${TSAK_NAME}_recorded.hdf5 \
+  --dataset_file datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
   --embodiment gr1_pink
@@ -60,20 +63,26 @@ python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   # --viz kit 
 
 
+python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
+  --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
+  --hdf5_name ${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
+  --language_instruction "${LANGUAGE_INSTRUCTION}"
+
+
 python assets/clean_lerobot_dataset.py \
-  --dataset datasets/${TSAK_NAME}_recorded/lerobot \
+  --dataset datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}/lerobot \
   --apply \
-  --original-count 200
+  --original-count ${NUM_RECORDED_DEMOS}
 
 python assets/merge_lerobot_datasets.py \
-  --datasets datasets/${TSAK_NAME}_recorded/lerobot datasets/${TSAK_NAME}_generated/lerobot \
+  --datasets datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}/lerobot datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output datasets/${TSAK_NAME}_merged/lerobot
 
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
   --device cpu \
-  --input_file datasets/${TSAK_NAME}_recorded.hdf5 \
-  --output_file datasets/${TSAK_NAME}_annotated.hdf5 \
+  --input_file datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
+  --output_file datasets/${TSAK_NAME}_annotated_${NUM_RECORDED_DEMOS}.hdf5 \
   --mimic \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
@@ -86,7 +95,7 @@ python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/generate_da
   --device cpu \
   --generation_num_trials ${NUM_GENERATED_DEMOS} \
   --num_envs 20 \
-  --input_file datasets/${TSAK_NAME}_annotated.hdf5 \
+  --input_file datasets/${TSAK_NAME}_annotated_${NUM_RECORDED_DEMOS}.hdf5 \
   --output_file datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}.hdf5 \
   --enable_cameras \
   --mimic \
@@ -103,7 +112,7 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
 
 
 python3 assets/filter_episodes_by_videos.py \
-  datasets/${TSAK_NAME}_recorded/lerobot/
+  datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}/lerobot/
 
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
@@ -162,14 +171,14 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
 
 
 CUDA_VISIBLE_DEVICES=3 python assets/policy_runner_hdf5.py \
-  --dataset_file datasets/${TSAK_NAME}_recorded_200.hdf5 \
+  --dataset_file datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
   --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
   --language_instruction "${LANGUAGE_INSTRUCTION}" \
   --policy_config_yaml_path isaaclab_arena_gr00t/policy/config/gr1_two_arm_config.yaml \
   --viz none \
   --remote_host 127.0.0.1 \
   --remote_port 5555 \
-  --num_episodes 200 \
+  --num_episodes ${NUM_RECORDED_DEMOS} \
   --enable_cameras \
   --record_viewport_video \
   --record_camera_video \
