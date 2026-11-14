@@ -35,7 +35,7 @@ GRASP_MAX_PALM_DISTANCE = 0.10
 GRASP_MIN_FINGER_CURL = math.radians(20.0)
 GRASP_MIN_CURLED_FINGERS = 2
 CUP_GRASP_MIN_LIFT = 0.05  # Clear the 4 cm holder with an extra 1 cm of lift.
-# The cup USD's visual and collision walls are authored for 1 cm thickness at this XY scale.
+# The default rectangular cup has 3 mm visual and collision walls at this XY scale.
 CUP_SCALE = (0.7, 0.7, 1.0)
 CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm without widening it.
 BALL_SCALE = (0.6, 0.6, 0.6)
@@ -57,9 +57,9 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     pouring_ball_path: str = str(_ASSET_DIR / "pouring_ball.usd")
     pouring_bowl_path: str = str(_ASSET_DIR / "pouring_bowl.usd")
-    pouring_cup_path: str = str(_ASSET_DIR / "pouring_cup.usd")
-    pouring_cup_holder_path: str = str(_ASSET_DIR / "pouring_cup_holder.usd")
-    """Independent flared cup holder, scaled to 4 cm tall for the default cup at CUP_SCALE."""
+    pouring_cup_path: str = str(_ASSET_DIR / "pouring_rectangular_cup.usd")
+    pouring_cup_holder_path: str = str(_ASSET_DIR / "pouring_rectangular_cup_holder.usd")
+    """Matching chamfered rectangular holder, scaled to 4 cm tall with 5 mm side clearance."""
     pouring_pad_path: str = str(_ASSET_DIR / "pouring_pad.usd")
     ball_in_bowl_max_xy_distance: float = 0.035
     """Conservative ball-center radius around the bowl's local center, in meters."""
