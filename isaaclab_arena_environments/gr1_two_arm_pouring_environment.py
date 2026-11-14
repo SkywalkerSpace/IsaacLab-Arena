@@ -36,7 +36,7 @@ GRASP_MAX_PALM_DISTANCE = 0.10
 GRASP_MIN_FINGER_CURL = math.radians(20.0)
 GRASP_MIN_CURLED_FINGERS = 2
 CUP_GRASP_MIN_LIFT = 0.05  # Clear the 4 cm holder with an extra 1 cm of lift.
-# The default rectangular cup has 3 mm visual and collision walls at this XY scale.
+# The default rectangular cup has 5 mm visual/collision walls and an unchanged 38 x 36 mm cavity.
 CUP_SCALE = (0.7, 0.7, 1.0)
 CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm without widening it.
 BALL_SCALE = (0.6, 0.6, 0.6)
