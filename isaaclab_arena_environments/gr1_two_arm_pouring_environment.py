@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 POSITION_XY_RANDOM_MAX = 0.05
+CUP_YAW_RANDOM_MAX = math.pi / 2.0
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
 CUP_POSITION_XY = (-0.10, 0.40)
@@ -41,6 +42,13 @@ CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm wit
 BALL_SCALE = (0.6, 0.6, 0.6)
 BALL_MASS = 0.10  # kg
 CUP_INNER_FRICTION = 0.1
+CUP_STATIC_FRICTION = 1.5
+CUP_DYNAMIC_FRICTION = 1.5
+# Stay below the holder's 5 mm clearance with its unchanged 2 mm contact offset.
+CUP_CONTACT_OFFSET = 0.0025
+CUP_REST_OFFSET = 0.0003  # A 0.3 mm contact skin limits visible finger penetration.
+FINGER_CONTACT_OFFSET = 0.003
+
 
 @dataclass
 class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
@@ -52,7 +60,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
     episode_length_s: float = 20.0
     randomize_object_poses: bool = True
-    """Jitter cup and bowl positions at reset; disable to restore their fixed initial positions."""
+    """Jitter cup/bowl XY and sample a shared 0–90 degree cup/holder yaw; disable for fixed poses."""
     randomization_seed: int | None = None
     """Layout seed; None samples a fresh seed on each launch, independently of Arena's seed."""
     pouring_ball_path: str = str(_ASSET_DIR / "pouring_ball.usd")
@@ -146,6 +154,10 @@ def _spawn_pouring_robot(prim_path, cfg, translation=None, orientation=None, **k
                 print(f"[WARN] Pouring finger body has no collider: {prim.GetPath()}")
             for collider in colliders:
                 UsdPhysics.CollisionAPI(collider).CreateCollisionEnabledAttr(True)
+                collision = PhysxSchema.PhysxCollisionAPI.Apply(collider)
+                collision.CreateContactOffsetAttr(FINGER_CONTACT_OFFSET)
+                collision.CreateRestOffsetAttr(0.0)
+                # Preserve the authored finger material, including its friction against the bowl.
     return robot
 
 
@@ -315,14 +327,18 @@ def _spawn_pouring_cup(prim_path, cfg, translation=None, orientation=None, **kwa
             UsdPhysics.CollisionAPI.Apply(inner_mesh.GetPrim()).CreateCollisionEnabledAttr(True)
             UsdPhysics.MeshCollisionAPI.Apply(inner_mesh.GetPrim()).CreateApproximationAttr("convexHull")
             collision = PhysxSchema.PhysxCollisionAPI.Apply(inner_mesh.GetPrim())
-            collision.CreateContactOffsetAttr(cfg.collision_props.contact_offset)
-            collision.CreateRestOffsetAttr(cfg.collision_props.rest_offset)
+            collision.CreateContactOffsetAttr(CUP_CONTACT_OFFSET)
+            # Keep the cavity size unchanged; only the outer shell gets a positive contact skin.
+            collision.CreateRestOffsetAttr(0.0)
             UsdShade.MaterialBindingAPI.Apply(inner_mesh.GetPrim()).Bind(
                 material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics"
             )
         for prim in Usd.PrimRange(root):
             if prim.HasAPI(UsdPhysics.CollisionAPI):
                 UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(True)
+                collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+                collision.CreateContactOffsetAttr(CUP_CONTACT_OFFSET)
+                collision.CreateRestOffsetAttr(0.0 if prim.GetName().startswith("Inner_Wall_") else CUP_REST_OFFSET)
     return cup
 
 
@@ -333,7 +349,7 @@ def _randomize_pouring_layout(
     randomization_seed: int | None = None,
     randomize_object_poses: bool = True,
 ) -> None:
-    """Reset props with optional XY jitter, moving the cup, ball, and holder together; keep the pad fixed."""
+    """Reset props with XY jitter and shared cup/holder yaw in [0, pi/2); keep the pad fixed."""
     import secrets
     import torch
 
@@ -343,6 +359,7 @@ def _randomize_pouring_layout(
     if len(env_ids) == 0:
         return
     offsets = torch.zeros((len(env_ids), 2, 2), device=env.device)
+    cup_yaw = torch.zeros(len(env_ids), device=env.device)
     if randomize_object_poses:
         if not hasattr(env, "_pouring_rng"):
             seed = secrets.randbits(63) if randomization_seed is None else randomization_seed
@@ -353,11 +370,22 @@ def _randomize_pouring_layout(
         offsets = (
             torch.rand((len(env_ids), 2, 2), device=env.device, generator=env._pouring_rng) * 2.0 - 1.0
         ) * POSITION_XY_RANDOM_MAX
+        cup_yaw = torch.rand(len(env_ids), device=env.device, generator=env._pouring_rng) * CUP_YAW_RANDOM_MAX
+    cos_yaw, sin_yaw = torch.cos(cup_yaw), torch.sin(cup_yaw)
     for name, offset_index in (("cup", 0), ("ball", 0), ("cup_holder", 0), ("bowl", 1)):
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
         pose[:, :2] += offsets[:, offset_index]
         pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
+        if name in ("cup", "ball", "cup_holder"):
+            # Rotate around the cavity center (ball XY), also supporting assets with offset roots.
+            dx = positions[name][0] - positions["ball"][0]
+            dy = positions[name][1] - positions["ball"][1]
+            pose[:, 0] += (cos_yaw - 1.0) * dx - sin_yaw * dy
+            pose[:, 1] += sin_yaw * dx + (cos_yaw - 1.0) * dy
+        if name in ("cup", "cup_holder"):
+            pose[:, 5] = torch.sin(cup_yaw / 2.0)
+            pose[:, 6] = torch.cos(cup_yaw / 2.0)
         asset = env.scene[name]
         asset.write_root_pose_to_sim(pose, env_ids=env_ids)
         if name != "cup_holder":
@@ -375,19 +403,25 @@ def _complete_pouring_replay_state(
     The input dictionaries and tensors are not modified. Origins must correspond
     to the environments being restored, in the same order as the recorded batch.
     """
+    import torch
+
     rigid_objects = state["rigid_object"]
     if "cup_holder" in rigid_objects:
         return state
 
     cup_pose = rigid_objects["cup"]["root_pose"]
     holder_pose = cup_pose.new_zeros(cup_pose.shape)
-    # Keep the reset-time XY alignment, but never copy the cup's height or tilt.
+    # Preserve the cup's heading, but never copy its height, roll, or pitch to the holder.
+    x, y, z, w = cup_pose[:, 3:7].unbind(dim=1)  # XYZW quaternions.
+    yaw = torch.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y.square() + z.square()))
     offset_xy = cup_pose.new_tensor(positions["cup_holder"][:2]) - cup_pose.new_tensor(positions["cup"][:2])
-    holder_pose[:, :2] = cup_pose[:, :2] + offset_xy
+    holder_pose[:, 0] = cup_pose[:, 0] + torch.cos(yaw) * offset_xy[0] - torch.sin(yaw) * offset_xy[1]
+    holder_pose[:, 1] = cup_pose[:, 1] + torch.sin(yaw) * offset_xy[0] + torch.cos(yaw) * offset_xy[1]
     holder_pose[:, 2] = positions["cup_holder"][2]
     if not is_relative:
         holder_pose[:, 2] += env_origins[:, 2].to(device=cup_pose.device, dtype=cup_pose.dtype)
-    holder_pose[:, 6] = 1.0  # Isaac Lab 3.0 uses XYZW quaternions.
+    holder_pose[:, 5] = torch.sin(yaw / 2.0)
+    holder_pose[:, 6] = torch.cos(yaw / 2.0)
     holder_state = {
         "root_pose": holder_pose,
         "root_velocity": cup_pose.new_zeros((cup_pose.shape[0], 6)),
@@ -905,11 +939,17 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                     collision_enabled=True, contact_offset=0.002, rest_offset=0.0
                 ),
             }
-            if name in ("cup", "bowl"):
-                friction = 1.5 if name == "cup" else 1.0
+            if name == "cup":
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
-                    static_friction=friction, dynamic_friction=friction
+                    static_friction=CUP_STATIC_FRICTION,
+                    dynamic_friction=CUP_DYNAMIC_FRICTION,
+                    restitution=0.0,
+                    compliant_contact_stiffness=0.0,
+                    # Retain the holder's low-friction min combination.
+                    friction_combine_mode="average",
                 )
+            if name == "bowl":
+                addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(static_friction=1.5, dynamic_friction=1.5)
             if name == "cup_holder":
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
                     static_friction=0.2, dynamic_friction=0.15, restitution=0.0, friction_combine_mode="min"
@@ -948,7 +988,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
             task.task_description += (
                 "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
                 "the ball and cup holder move with the cup so that it starts inside the holder, "
-                "with the ball inside the cup, while the pad remains fixed."
+                "with the ball inside the cup. The cup and holder share a random yaw from 0 to 90 degrees, "
+                "while the pad remains fixed."
             )
         else:
             task.task_description += (
