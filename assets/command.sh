@@ -31,7 +31,7 @@ export LANGUAGE_INSTRUCTION=
 
 export NUM_RECORDED_DEMOS=300
 
-export NUM_GENERATED_DEMOS=1000
+export NUM_GENERATED_DEMOS=2000
 
 export DATASET_DIR=datasets
 
@@ -65,18 +65,18 @@ python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
 
 python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
-  --hdf5_name ${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
+  --hdf5_name ${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay.hdf5 \
   --language_instruction "${LANGUAGE_INSTRUCTION}"
 
 
+python3 assets/filter_episodes_by_videos.py \
+  datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay/lerobot/
+
+
 python assets/clean_lerobot_dataset.py \
-  --dataset datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}/lerobot \
+  --dataset datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay/lerobot \
   --apply \
   --original-count ${NUM_RECORDED_DEMOS}
-
-python assets/merge_lerobot_datasets.py \
-  --datasets datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}/lerobot datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
-  --output datasets/${TSAK_NAME}_merged/lerobot
 
 
 python submodules/IsaacLab/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py \
@@ -111,8 +111,9 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --language_instruction "${LANGUAGE_INSTRUCTION}"
 
 
-python3 assets/filter_episodes_by_videos.py \
-  datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}/lerobot/
+python assets/merge_lerobot_datasets.py \
+  --datasets datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay/lerobot datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
+  --output datasets/${TSAK_NAME}_merged/lerobot
 
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
@@ -121,8 +122,8 @@ python3 assets/filter_episodes_by_videos.py \
 cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
-  --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
-  --output-dir ../../models/${TSAK_NAME}/ \
+  --dataset-path ../../datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay/lerobot \
+  --output-dir ../../models/${TSAK_NAME}_${NUM_RECORDED_DEMOS}/ \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
   --global-batch-size 16 \
   --gradient-accumulation-steps 8 \
@@ -138,7 +139,26 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --embodiment-tag GR1 \
   --save-total-limit 3
   #--color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
-  # --use_wandb
+
+
+CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
+  --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
+  --output-dir ../../models/${TSAK_NAME}_${NUM_GENERATED_DEMOS}/ \
+  --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
+  --global-batch-size 16 \
+  --gradient-accumulation-steps 8 \
+  --max-steps 60000 \
+  --num-gpus 1 \
+  --save-steps 10000 \
+  --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
+  --no-tune-llm \
+  --no-tune-visual \
+  --tune-projector \
+  --tune-diffusion-model \
+  --dataloader-num-workers 4 \
+  --embodiment-tag GR1 \
+  --save-total-limit 3
+  #--color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
 
 
 cd submodules/Isaac-GR00T
