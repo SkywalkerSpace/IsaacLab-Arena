@@ -125,7 +125,7 @@ def _reset_tray_objects(
     import torch
 
     import isaaclab.envs.mdp as mdp
-    from isaaclab.managers import SceneEntityCfg
+    from isaaclab.managers import EventTermCfg, SceneEntityCfg
 
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device)
@@ -149,13 +149,18 @@ def _reset_tray_objects(
                 for axis, source, target in zip(("x", "y"), source_xy, target_xy):
                     lower, upper = object_pose_range.get(axis, (0.0, 0.0))
                     object_pose_range[axis] = (lower + target - source, upper + target - source)
-            mdp.reset_root_state_uniform(
-                env,
-                selected_ids,
-                pose_range=object_pose_range,
-                velocity_range={},
-                asset_cfg=SceneEntityCfg(name),
+            # This event class caches its ranges in __init__, so configure each slot before constructing it.
+            reset_cfg = EventTermCfg(
+                func=mdp.reset_root_state_uniform,
+                mode="reset",
+                params={
+                    "pose_range": object_pose_range,
+                    "velocity_range": {},
+                    "asset_cfg": SceneEntityCfg(name),
+                },
             )
+            reset_term = mdp.reset_root_state_uniform(cfg=reset_cfg, env=env)
+            reset_term(env, selected_ids, **reset_cfg.params)
 
 
 def _object_lifted(
