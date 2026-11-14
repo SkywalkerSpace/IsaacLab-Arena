@@ -41,12 +41,6 @@ CUP_SCALE = (0.7, 0.7, 1.0)
 CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm without widening it.
 BALL_SCALE = (0.6, 0.6, 0.6)
 BALL_MASS = 0.10  # kg
-CUP_INNER_FRICTION = 0.1
-CUP_STATIC_FRICTION = 1.5
-CUP_DYNAMIC_FRICTION = 1.5
-# Stay below the holder's 5 mm clearance with its unchanged 2 mm contact offset.
-CUP_CONTACT_OFFSET = 0.0025
-CUP_REST_OFFSET = 0.0003  # A 0.3 mm contact skin limits visible finger penetration.
 FINGER_CONTACT_OFFSET = 0.003
 
 
@@ -276,70 +270,6 @@ def _spawn_pouring_ball(prim_path, cfg, translation=None, orientation=None, **kw
         # Zero requests automatic inertia computation from the collider and the new mass.
         mass.CreateDiagonalInertiaAttr(Gf.Vec3f(0.0))
     return ball
-
-
-def _spawn_pouring_cup(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Spawn a dynamic rigid cup with enabled collisions and low-friction inner walls."""
-    import isaaclab.sim as sim_utils
-    from pxr import Gf, PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade
-
-    cup = _spawn_pouring_object(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
-    stage = sim_utils.get_current_stage()
-    for path in sim_utils.find_matching_prim_paths(prim_path):
-        root = stage.GetPrimAtPath(path)
-        body = _pouring_collision_body(root)
-        rigid_body = UsdPhysics.RigidBodyAPI(body)
-        rigid_body.CreateRigidBodyEnabledAttr(True)
-        rigid_body.CreateKinematicEnabledAttr(False)
-        walls = []
-        # Snapshot all walls before editing: the stock USD walls reference Wall_00.
-        for prim in Usd.PrimRange(root):
-            if prim.HasAPI(UsdPhysics.CollisionAPI) and prim.GetName().startswith("Wall_"):
-                assert prim.IsA(UsdGeom.Mesh), f"Expected a convex cup wall mesh: {prim.GetPath()}"
-                mesh = UsdGeom.Mesh(prim)
-                points = list(mesh.GetPointsAttr().Get())
-                assert len(points) == 8, f"Expected an eight-vertex cup wall: {prim.GetPath()}"
-                walls.append((mesh, points))
-        assert walls, f"No split-compatible cup walls found under {root.GetPath()}"
-        material = UsdShade.Material.Define(stage, root.GetPath().AppendChild("InnerWallMaterial"))
-        physics_material = UsdPhysics.MaterialAPI.Apply(material.GetPrim())
-        physics_material.CreateStaticFrictionAttr(CUP_INNER_FRICTION)
-        physics_material.CreateDynamicFrictionAttr(CUP_INNER_FRICTION)
-        physics_material.CreateRestitutionAttr(0.0)
-        PhysxSchema.PhysxMaterialAPI.Apply(material.GetPrim()).CreateFrictionCombineModeAttr("min")
-        for mesh, points in walls:
-            outer_points = list(points)
-            inner_points = list(points)
-            # Each end has two exterior vertices followed by two cavity vertices.
-            for outer, inner in ((0, 3), (1, 2), (4, 7), (5, 6)):
-                midpoint = Gf.Vec3f((points[outer] + points[inner]) * 0.5)
-                outer_points[inner] = midpoint
-                inner_points[outer] = midpoint
-            mesh.GetPointsAttr().Set(outer_points)
-            inner_path = mesh.GetPath().GetParentPath().AppendChild(f"Inner_{mesh.GetPrim().GetName()}")
-            inner_mesh = UsdGeom.Mesh.Define(stage, inner_path)
-            inner_mesh.CreatePointsAttr(inner_points)
-            inner_mesh.CreateFaceVertexCountsAttr(mesh.GetFaceVertexCountsAttr().Get())
-            inner_mesh.CreateFaceVertexIndicesAttr(mesh.GetFaceVertexIndicesAttr().Get())
-            inner_mesh.CreateSubdivisionSchemeAttr("none")
-            inner_mesh.AddTransformOp().Set(mesh.GetLocalTransformation())
-            UsdGeom.Imageable(inner_mesh.GetPrim()).CreateVisibilityAttr("invisible")
-            UsdPhysics.CollisionAPI.Apply(inner_mesh.GetPrim()).CreateCollisionEnabledAttr(True)
-            UsdPhysics.MeshCollisionAPI.Apply(inner_mesh.GetPrim()).CreateApproximationAttr("convexHull")
-            collision = PhysxSchema.PhysxCollisionAPI.Apply(inner_mesh.GetPrim())
-            collision.CreateContactOffsetAttr(CUP_CONTACT_OFFSET)
-            # Keep the cavity size unchanged; only the outer shell gets a positive contact skin.
-            collision.CreateRestOffsetAttr(0.0)
-            UsdShade.MaterialBindingAPI.Apply(inner_mesh.GetPrim()).Bind(
-                material, bindingStrength=UsdShade.Tokens.strongerThanDescendants, materialPurpose="physics"
-            )
-        for prim in Usd.PrimRange(root):
-            if prim.HasAPI(UsdPhysics.CollisionAPI):
-                UsdPhysics.CollisionAPI(prim).CreateCollisionEnabledAttr(True)
-                collision = PhysxSchema.PhysxCollisionAPI.Apply(prim)
-                collision.CreateContactOffsetAttr(CUP_CONTACT_OFFSET)
-                collision.CreateRestOffsetAttr(0.0 if prim.GetName().startswith("Inner_Wall_") else CUP_REST_OFFSET)
-    return cup
 
 
 def _randomize_pouring_layout(
@@ -926,7 +856,8 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         pouring_assets = {}
         for name, path in asset_paths.items():
             addons = {
-                "func": {"ball": _spawn_pouring_ball, "cup": _spawn_pouring_cup}.get(name, _spawn_pouring_object),
+                # Like the bowl, keep the cup's authored convex walls intact at their full thickness.
+                "func": _spawn_pouring_ball if name == "ball" else _spawn_pouring_object,
                 "make_uninstanceable": True,
                 "rigid_props": sim_utils.RigidBodyPropertiesCfg(
                     rigid_body_enabled=True,
@@ -939,16 +870,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
                     collision_enabled=True, contact_offset=0.002, rest_offset=0.0
                 ),
             }
-            if name == "cup":
-                addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
-                    static_friction=CUP_STATIC_FRICTION,
-                    dynamic_friction=CUP_DYNAMIC_FRICTION,
-                    restitution=0.0,
-                    compliant_contact_stiffness=0.0,
-                    # Retain the holder's low-friction min combination.
-                    friction_combine_mode="average",
-                )
-            if name == "bowl":
+            if name in ("cup", "bowl"):
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(static_friction=1.5, dynamic_friction=1.5)
             if name == "cup_holder":
                 addons["physics_material"] = sim_utils.RigidBodyMaterialCfg(
