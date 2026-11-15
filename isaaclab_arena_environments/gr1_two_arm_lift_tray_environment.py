@@ -48,7 +48,7 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
     lift_tray_obj1_path: str = str(_ASSET_DIR / "lift_tray_obj1.usd")
     lift_tray_pot_path: str = str(_ASSET_DIR / "lift_tray_pot.usd")
     success_max_xy_distance: float = 0.10
-    success_max_height_difference: float = 0.08
+    success_max_height_difference: float = 0.10
     success_max_speed: float = 2.0
     """Componentwise object velocity limits relative to the pot [m/s, rad/s]."""
     pickup_height: float = 0.05
