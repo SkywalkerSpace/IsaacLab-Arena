@@ -34,7 +34,8 @@ are never copied. If relative_stats.json exists, explicitly choose
 
 Default: read-only metadata/file preview. --apply builds a staged copy and only
 publishes it after success. Output must be new and separate from every input;
-sources are never modified. Root extras/README/caches are not copied. The output
+missing parent directories are created only with --apply. Sources are never
+modified. Root extras/README/caches are not copied. The output
 merge_report.json records source-to-output episode mappings.
 """
 
@@ -154,8 +155,6 @@ def prepare(args):
     output = args.output.expanduser().resolve()
     if output.exists():
         raise FileExistsError(f"Output already exists: {output}")
-    if not output.parent.is_dir():
-        raise ValueError(f"Output parent must already exist: {output.parent}")
     for root in roots:
         if output.is_relative_to(root) or root.is_relative_to(output):
             raise ValueError(f"Output must be separate from input: {root}")
@@ -331,7 +330,7 @@ def main():
     """Preview or apply a non-destructive merge of same-task datasets."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--datasets", nargs="+", type=Path, required=True, help="Input LeRobot roots, in merge order")
-    parser.add_argument("--output", type=Path, required=True, help="New output directory; parent must exist")
+    parser.add_argument("--output", type=Path, required=True, help="New output directory; missing parents created with --apply")
     parser.add_argument("--chunk-size", type=int, default=1000, help="Output episodes per chunk (default: 1000)")
     parser.add_argument("--apply", action="store_true", help="Write output; otherwise read-only preview")
     parser.add_argument("--gr00t-root", type=Path, help="GR00T checkout for relative-stat regeneration")
@@ -358,6 +357,7 @@ def main():
         if not args.apply:
             print("DRY RUN: no files changed. Add --apply to execute (parquet values/schema validated during rebuild).")
             return
+        output.parent.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix=f".{output.name}.merging-", dir=output.parent))
         rebuild(stage, plan, args)
         # Reserve exclusively; never replace an already-existing output directory.
