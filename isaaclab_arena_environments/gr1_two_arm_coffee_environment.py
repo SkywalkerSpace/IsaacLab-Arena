@@ -33,6 +33,7 @@ COFFEE_MACHINE_POSITION_XY = (0.00, 0.55)
 COFFEE_MACHINE_ROTATION_XYZW = (0.0, 0.0, math.sin(5 * math.pi / 8), math.cos(5 * math.pi / 8))
 COFFEE_POD_GRASP_MAX_DISTANCE = 0.05
 COFFEE_POD_GRASP_MIN_LIFT = 0.03
+COFFEE_POD_MASS_KG = 0.050
 
 
 @dataclass
@@ -103,7 +104,7 @@ def _spawn_packing_table_without_container(prim_path, cfg, translation=None, ori
 
 def _normalize_coffee_object(root):
     """Merge the coffee pod's fixed links into one root rigid body."""
-    from pxr import Usd, UsdPhysics
+    from pxr import Gf, Usd, UsdPhysics
 
     prims = list(Usd.PrimRange(root))
     joints = [prim for prim in prims if prim.IsA(UsdPhysics.Joint)]
@@ -118,6 +119,14 @@ def _normalize_coffee_object(root):
         if prim.HasAPI(UsdPhysics.MassAPI):
             prim.RemoveAPI(UsdPhysics.MassAPI)
     UsdPhysics.RigidBodyAPI.Apply(root).CreateRigidBodyEnabledAttr(True)
+    # Removing MassAPI does not remove authored attributes. Reset its automatic-computation
+    # sentinels so reapplying it cannot restore a source link's stale inertia or center of mass.
+    mass_api = UsdPhysics.MassAPI.Apply(root)
+    mass_api.CreateMassAttr(COFFEE_POD_MASS_KG)
+    mass_api.CreateDensityAttr(0.0)
+    mass_api.CreateDiagonalInertiaAttr(Gf.Vec3f(0.0))
+    mass_api.CreateCenterOfMassAttr(Gf.Vec3f(float("-inf")))
+    mass_api.CreatePrincipalAxesAttr(Gf.Quatf(0.0))
     return root
 
 
@@ -135,6 +144,27 @@ def _spawn_coffee_object(prim_path, cfg, translation=None, orientation=None, **k
         if cfg.activate_contact_sensors:
             sim_utils.activate_contact_sensors(path)
     return prim
+
+
+def _validate_coffee_pod_mass_properties(env: ManagerBasedRLEnv, env_ids: torch.Tensor | None) -> None:
+    """Check the initialized pod mass and report the simulator-computed inertia."""
+    import torch
+    import warp as wp
+
+    pod = env.scene["coffee_pod"]
+    masses = wp.to_torch(pod.data.body_mass)
+    inertias = wp.to_torch(pod.data.body_inertia)
+    assert torch.isfinite(masses).all() and torch.allclose(
+        masses, torch.full_like(masses, COFFEE_POD_MASS_KG), rtol=1e-4, atol=1e-7
+    ), f"Coffee pod mass must be {COFFEE_POD_MASS_KG} kg; simulator returned {masses}"
+    assert torch.isfinite(inertias).all() and (inertias.abs().sum(dim=-1) > 0).all(), (
+        f"Coffee pod must have finite, nonzero simulator-computed inertia; got {inertias}"
+    )
+    print(
+        f"[INFO] Coffee pod physics ({env.num_envs} envs checked): "
+        f"mass={masses[0].tolist()} kg; inertia={inertias[0].tolist()} kg*m^2 "
+        "(env 0, simulator body_inertia layout)"
+    )
 
 
 def _randomize_coffee_layout(
@@ -373,6 +403,10 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
 
         @configclass
         class CoffeeEventsCfg:
+            validate_coffee_pod_mass_properties = EventTermCfg(
+                func=_validate_coffee_pod_mass_properties,
+                mode="startup",
+            )
             # The layout event resets the dynamic pod and the fixed-base machine articulation.
             reset_all = EventTermCfg(
                 func=mdp.reset_root_state_uniform,
