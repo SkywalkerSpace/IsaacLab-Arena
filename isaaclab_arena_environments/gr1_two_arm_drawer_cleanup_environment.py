@@ -524,7 +524,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             mass_props=sim_utils.MassCfg(mass=0.15),
             mass_props_create_if_missing=True,
             activate_contact_sensors=True,
-            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
+            physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.5, dynamic_friction=1.5),
         )
         mug = Object(
             name="mug",

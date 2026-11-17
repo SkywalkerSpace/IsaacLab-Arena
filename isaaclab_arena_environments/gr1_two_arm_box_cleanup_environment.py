@@ -451,7 +451,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 usd_path=cfg.lid_usd_path,
                 scale=LID_SCALE,
                 activate_contact_sensors=True,
-                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
+                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.5, dynamic_friction=1.5),
             ),
             initial_pose=Pose(position_xyz=positions["lid"]),
         )
@@ -463,7 +463,7 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                 usd_path=cfg.bin_usd_path,
                 scale=BIN_SCALE,
                 activate_contact_sensors=True,
-                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.0, dynamic_friction=1.0),
+                physics_material=sim_utils.RigidBodyMaterialCfg(static_friction=1.5, dynamic_friction=1.5),
             ),
             initial_pose=Pose(position_xyz=positions["bin"]),
         )
