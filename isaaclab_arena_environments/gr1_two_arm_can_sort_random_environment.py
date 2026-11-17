@@ -30,12 +30,18 @@ POSITION_XY_RANDOM_MAX = 0.05
 BOX_CLOCKWISE_90_ROTATION_XYZW = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
-BOX_LEFT_POSITION_XY = (-0.49, 0.40)
-BOX_RIGHT_POSITION_XY = (-0.25, 0.40)
-BOX_SCALE = (0.6, 0.6, 0.6)
+BOX_LEFT_POSITION_XY = (-0.30, 0.60)
+BOX_RIGHT_POSITION_XY = (-0.10, 0.60)
+BOX_SCALE = (0.5, 0.5, 0.5)
 CAN_SCALE = (0.6, 0.6, 1.0)
 CAN_LEFT_POSITION_XY = (0.05, 0.35)
 CAN_RIGHT_POSITION_XY = (1.5, 0.5)
+CAN_HOLDER_PATH = str(_ASSET_DIR / "pouring_cup_holder.usd")
+CAN_HOLDER_HEIGHT = 0.04
+CAN_HOLDER_CLEARANCE = 0.005
+# At the narrowest opening, the circular holder has 24 inner edges with vertices at a 28 mm radius.
+CAN_HOLDER_INNER_RADIUS = 0.028 * math.cos(math.pi / 24.0)
+CAN_GRASP_MIN_LIFT = CAN_HOLDER_HEIGHT + 0.01
 
 
 @dataclass
@@ -163,8 +169,9 @@ def _randomize_pair(
     rotation_xyzw: tuple[float, float, float, float],
     randomization_seed: int | None = None,
     randomize_object_poses: bool = True,
+    holder_offsets: dict[str, tuple[float, float, float]] | None = None,
 ) -> None:
-    """Reset a pair with optional color swaps and XY jitter, sharing the box offset."""
+    """Reset a pair with optional color swaps and XY jitter, moving any holders with their cans."""
     import secrets
     import torch
 
@@ -203,6 +210,11 @@ def _randomize_pair(
         pose[:, 3:] = torch.tensor(rotation_xyzw, device=env.device)
         asset.write_root_pose_to_sim(pose, env_ids=env_ids)
         asset.write_root_velocity_to_sim(torch.zeros((len(env_ids), 6), device=env.device), env_ids=env_ids)
+        if holder_offsets is not None:
+            holder_pose = pose.clone()
+            holder_pose[:, :3] += pose.new_tensor(holder_offsets[color])
+            # Kinematic holders stay at the reset position after the can is lifted.
+            env.scene[f"{color}_can_holder"].write_root_pose_to_sim(holder_pose, env_ids=env_ids)
 
 
 def _randomize_box_sides(
@@ -233,8 +245,9 @@ def _randomize_can_position(
     right_positions: dict[str, tuple[float, float, float]],
     randomization_seed: int | None = None,
     randomize_object_poses: bool = True,
+    holder_offsets: dict[str, tuple[float, float, float]] | None = None,
 ) -> None:
-    """Reset cans with optional side swaps and [-5, 5] cm XY jitter of the left slot."""
+    """Reset cans and holders with optional side swaps and [-5, 5] cm XY jitter of the left slot."""
     _randomize_pair(
         env,
         env_ids,
@@ -244,6 +257,7 @@ def _randomize_can_position(
         (0.0, 0.0, 0.0, 1.0),
         randomization_seed=randomization_seed,
         randomize_object_poses=randomize_object_poses,
+        holder_offsets=holder_offsets,
     )
 
 
@@ -344,6 +358,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         left_positions = {"box": {}, "can": {}}
         right_positions = {"box": {}, "can": {}}
+        can_bounds = {}
         for kind, scale, left_xy, right_xy in (
             ("box", BOX_SCALE, BOX_LEFT_POSITION_XY, BOX_RIGHT_POSITION_XY),
             ("can", CAN_SCALE, CAN_LEFT_POSITION_XY, CAN_RIGHT_POSITION_XY),
@@ -356,6 +371,27 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 # The unused right-side can stays off the table on the ground.
                 right_surface_height = TABLE_SURFACE_HEIGHT if kind == "box" else 0.0
                 right_positions[kind][color] = (*right_xy, right_surface_height + SPAWN_CLEARANCE - min_z)
+                if kind == "can":
+                    can_bounds[color] = (box.min_point[0].tolist(), box.max_point[0].tolist())
+
+        holder_box = compute_local_bounding_box_from_usd(CAN_HOLDER_PATH)
+        holder_height = (holder_box.max_point[0, 2] - holder_box.min_point[0, 2]).item()
+        holder_scales = {}
+        holder_offsets = {}
+        for color, (can_min, can_max) in can_bounds.items():
+            # Fit the narrowest opening, not the larger outside diameter or flared rim.
+            can_radius = max(can_max[index] - can_min[index] for index in range(2)) / 2.0
+            scale_xy = (can_radius + CAN_HOLDER_CLEARANCE) / CAN_HOLDER_INNER_RADIUS
+            holder_scales[color] = (scale_xy, scale_xy, CAN_HOLDER_HEIGHT / holder_height)
+            scaled_holder_box = compute_local_bounding_box_from_usd(CAN_HOLDER_PATH, holder_scales[color])
+            holder_min = scaled_holder_box.min_point[0].tolist()
+            holder_max = scaled_holder_box.max_point[0].tolist()
+            # Align geometric centers even when the can's root is offset from its geometry.
+            holder_offsets[color] = (
+                (can_min[0] + can_max[0] - holder_min[0] - holder_max[0]) / 2.0,
+                (can_min[1] + can_max[1] - holder_min[1] - holder_max[1]) / 2.0,
+                can_min[2] - SPAWN_CLEARANCE - holder_min[2],
+            )
 
         @configclass
         class CanSortRandomSceneCfg(InteractiveSceneCfg):
@@ -368,13 +404,28 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
 
         @configclass
         class CanSortRandomEventsCfg:
-            reset_all = EventTermCfg(func=mdp.reset_scene_to_default, mode="reset")
+            # Props are reset below; avoid writing root velocities to kinematic holders.
+            reset_all = EventTermCfg(
+                func=mdp.reset_root_state_uniform,
+                mode="reset",
+                params={"asset_cfg": SceneEntityCfg("robot"), "pose_range": {}, "velocity_range": {}},
+            )
+            reset_robot_joints = EventTermCfg(
+                func=mdp.reset_joints_by_offset,
+                mode="reset",
+                params={
+                    "asset_cfg": SceneEntityCfg("robot"),
+                    "position_range": (0.0, 0.0),
+                    "velocity_range": (0.0, 0.0),
+                },
+            )
             reset_can = EventTermCfg(
                 func=_randomize_can_position,
                 mode="reset",
                 params={
                     "left_positions": left_positions["can"],
                     "right_positions": right_positions["can"],
+                    "holder_offsets": holder_offsets,
                     "randomization_seed": cfg.randomization_seed,
                     "randomize_object_poses": cfg.randomize_object_poses,
                 },
@@ -412,7 +463,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 func=_object_near_left_palm,
                 params={
                     "min_height_by_color": {
-                        color: position[2] + 0.03 for color, position in left_positions["can"].items()
+                        color: position[2] + CAN_GRASP_MIN_LIFT for color, position in left_positions["can"].items()
                     }
                 },
             )
@@ -707,7 +758,33 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
             ),
             initial_pose=Pose(position_xyz=right_positions["can"]["red"]),
         )
-        for asset in (blue_can, red_can, blue_box, red_box):
+        can_holders = []
+        for color, can in (("blue", blue_can), ("red", red_can)):
+            holder = Object(
+                name=f"{color}_can_holder",
+                prim_path=f"{{ENV_REGEX_NS}}/{color.capitalize()}CanHolder",
+                object_type=ObjectType.RIGID,
+                spawner_cfg=sim_utils.UsdFileCfg(
+                    usd_path=CAN_HOLDER_PATH,
+                    scale=holder_scales[color],
+                    rigid_props=sim_utils.RigidBodyPropertiesCfg(
+                        rigid_body_enabled=True, kinematic_enabled=True, disable_gravity=True
+                    ),
+                    collision_props=sim_utils.CollisionPropertiesCfg(
+                        collision_enabled=True, contact_offset=0.002, rest_offset=0.0
+                    ),
+                    physics_material=sim_utils.RigidBodyMaterialCfg(
+                        static_friction=0.2, dynamic_friction=0.15, restitution=0.0, friction_combine_mode="min"
+                    ),
+                ),
+                initial_pose=Pose(
+                    position_xyz=tuple(
+                        value + offset for value, offset in zip(can.initial_pose.position_xyz, holder_offsets[color])
+                    )
+                ),
+            )
+            can_holders.append(holder)
+        for asset in (blue_can, red_can, blue_box, red_box, *can_holders):
             asset.disable_reset_pose()
         ground = Object(
             name="ground",
@@ -721,7 +798,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
             object_type=ObjectType.BASE,
             spawner_cfg=source_scene.light.spawn.copy(),
         )
-        scene = Scene(assets=[table, blue_box, red_box, blue_can, red_can, ground, light])
+        scene = Scene(assets=[table, blue_box, red_box, blue_can, red_can, *can_holders, ground, light])
         task = TwoArmCanSortRandomTask(object=blue_can, episode_length_s=cfg.episode_length_s)
         task.task_description = (
             "Grasp the can initially at the left can position with the left hand, "
