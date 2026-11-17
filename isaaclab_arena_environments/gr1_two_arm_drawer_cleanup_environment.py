@@ -40,7 +40,7 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     randomize_object_poses: bool = True
     """Randomize object positions and rotations within the configured reset ranges."""
     drawer_cabinet_path: str = str(_ASSET_DIR / "drawer_cabinet.usd")
-    drawer_mug_path: str = str(_ASSET_DIR / "drawer_mug.usd")
+    drawer_mug_path: str = str(_ASSET_DIR / "drawer_hollow_mug.usd")
     success_max_xy_distance: float = 0.10
     success_max_height_difference: float = 0.08
     success_max_speed: float = 0.20
@@ -115,20 +115,24 @@ def _object_lifted(
 
 
 def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Preserve authored mug collision, adding concave-safe collision when missing."""
+    """Preserve explicit mug colliders, with mesh collision fallback for legacy assets."""
     import isaaclab.sim as sim_utils
     from pxr import Usd, UsdGeom, UsdPhysics
 
     mug_prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
     stage = sim_utils.get_current_stage()
     for mug_path in sim_utils.find_matching_prim_paths(prim_path):
-        for child in Usd.PrimRange(stage.GetPrimAtPath(mug_path)):
-            if child.IsA(UsdGeom.Mesh):
-                UsdPhysics.CollisionAPI.Apply(child).CreateCollisionEnabledAttr(True)
-                mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(child)
-                if not mesh_collision.GetApproximationAttr().HasAuthoredValueOpinion():
-                    mesh_collision.CreateApproximationAttr("convexDecomposition")
-        # The mug's colliders are added after spawn_from_usd applies its material.
+        root = stage.GetPrimAtPath(mug_path)
+        # The hollow asset separates visual geometry from explicitly authored convex colliders.
+        # Adding collision to its visual mesh would fill the cavity and handle hole again.
+        if not root.GetChild("Colliders").IsValid():
+            for child in Usd.PrimRange(root):
+                if child.IsA(UsdGeom.Mesh):
+                    UsdPhysics.CollisionAPI.Apply(child).CreateCollisionEnabledAttr(True)
+                    mesh_collision = UsdPhysics.MeshCollisionAPI.Apply(child)
+                    if not mesh_collision.GetApproximationAttr().HasAuthoredValueOpinion():
+                        mesh_collision.CreateApproximationAttr("convexDecomposition")
+        # Legacy colliders may be added after spawn_from_usd applies its material.
         if cfg.physics_material is not None:
             material_path = cfg.physics_material_path
             if not material_path.startswith("/"):
