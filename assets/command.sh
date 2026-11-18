@@ -165,6 +165,48 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   #--color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
 
 
+# ----- Multi-task fine-tuning: one model, multiple task datasets ----- #
+# This file is a collection of command snippets, not an end-to-end shell script.
+# Run the following block from the IsaacLab-Arena repository root.
+# Use the GR00T checkout/environment that already runs single-task fine-tuning.
+# Default: Arena's submodule. To use an external checkout instead, first set:
+# export GROOT_ROOT=/absolute/path/to/Isaac-GR00T-e29d8f
+# Keep each task's own language instruction when converting its dataset.
+# The same-task merge tool above must NOT be used to merge different tasks.
+(
+  ARENA_ROOT="$(pwd)"
+  GROOT_ROOT="${GROOT_ROOT:-${ARENA_ROOT}/submodules/Isaac-GR00T}"
+  cd "${GROOT_ROOT}" || exit 1
+
+  # One weight per path. 1 1 1 gives equal target task sampling weights,
+  # regardless of dataset lengths. For a 2:1:1 mixture, use 2 1 1 instead.
+  # Each path may also point to that task's generated or same-task merged dataset.
+  # Add --dry-run to preview options/mixture without starting training.
+  CUDA_VISIBLE_DEVICES=3 PYTHONPATH="${GROOT_ROOT}${PYTHONPATH:+:${PYTHONPATH}}" \
+    uv run python "${ARENA_ROOT}/assets/launch_finetune_multitask.py" \
+    --dataset-paths \
+      "${ARENA_ROOT}/datasets/gr1_two_arm_box_cleanup_recorded_300_replay/lerobot" \
+      "${ARENA_ROOT}/datasets/gr1_two_arm_drawer_cleanup_recorded_300_replay/lerobot" \
+      "${ARENA_ROOT}/datasets/gr1_two_arm_coffee_recorded_300_replay/lerobot" \
+    --dataset-weights 1 1 1 \
+    --output-dir "${ARENA_ROOT}/models/gr1_two_arm_multitask/" \
+    --modality-config-path "${ARENA_ROOT}/isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py" \
+    --global-batch-size 16 \
+    --gradient-accumulation-steps 8 \
+    --max-steps 60000 \
+    --num-gpus 1 \
+    --save-steps 10000 \
+    --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
+    --no-tune-llm \
+    --no-tune-visual \
+    --tune-projector \
+    --tune-diffusion-model \
+    --dataloader-num-workers 4 \
+    --embodiment-tag GR1 \
+    --save-total-limit 3
+)
+
+
 cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
