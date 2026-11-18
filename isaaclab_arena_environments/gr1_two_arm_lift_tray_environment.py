@@ -433,7 +433,8 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.1, 2.0)),
                 offset=CameraCfg.OffsetCfg(
-                    pos=(0.0, 0.15, 0.0), rot=(0.92387953, 0.0, 0.0, 0.38268343), convention="ros"
+                    # Palm side; ROS +Z points inward toward the palm and fingers (quaternion XYZW).
+                    pos=(0.0, -0.15, 0.0), rot=(-0.92387953, 0.0, 0.0, 0.38268343), convention="ros"
                 ),
             )
             right_wrist_cam = CameraCfg(
@@ -444,7 +445,8 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
                 data_types=["rgb"],
                 spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.1, 2.0)),
                 offset=CameraCfg.OffsetCfg(
-                    pos=(0.0, -0.15, 0.0), rot=(-0.92387953, 0.0, 0.0, 0.38268343), convention="ros"
+                    # Mirror the left camera across the hand's local XZ plane.
+                    pos=(0.0, 0.15, 0.0), rot=(0.92387953, 0.0, 0.0, 0.38268343), convention="ros"
                 ),
             )
 
