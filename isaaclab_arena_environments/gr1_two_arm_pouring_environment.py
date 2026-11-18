@@ -37,7 +37,7 @@ GRASP_MIN_FINGER_CURL = math.radians(20.0)
 GRASP_MIN_CURLED_FINGERS = 2
 CUP_GRASP_MIN_LIFT = 0.05  # Clear the 4 cm holder with an extra 1 cm of lift.
 # The default cup has 10 mm unscaled walls (7 mm at CUP_SCALE) and a 36 x 34 mm task-space cavity.
-CUP_SCALE = (0.7, 0.7, 1.0)
+CUP_SCALE = (0.7, 0.7, 1.1)
 CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm without widening it.
 BALL_SCALE = (0.5, 0.5, 0.5)
 BALL_MASS = 0.10  # kg
