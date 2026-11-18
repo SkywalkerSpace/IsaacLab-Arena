@@ -53,6 +53,8 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     debug_thumb_joints: bool = False  # --debug_thumb_joints
     """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
     episode_length_s: float = 20.0
+    finger_effort_limit: float = 0.5
+    """Per-finger-joint drive torque limit [N m] for the left hand only; preserve right-hand defaults."""
     randomize_object_poses: bool = True
     """Jitter cup/bowl XY and sample a shared 0–90 degree cup/holder yaw; disable for fixed poses."""
     randomization_seed: int | None = 42
@@ -86,6 +88,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
             "debug_thumb_joints requires the gr1_pink action layout"
         )
         for name in (
+            "finger_effort_limit",
             "ball_in_bowl_max_xy_distance",
             "success_max_xy_distance",
             "success_max_height_difference",
@@ -817,6 +820,11 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         embodiment.arm_mode = ArmMode.DUAL_ARM
         embodiment.mimic_env = PouringMimicEnv
         embodiment.scene_config.robot = source_scene.robot.copy()
+        assert "left-hand" in embodiment.scene_config.robot.actuators, "Missing GR1 left-hand actuator"
+        actuator = embodiment.scene_config.robot.actuators["left-hand"]
+        # Limit only the left hand; preserve right-hand defaults and both hands' gains.
+        actuator.effort_limit = cfg.finger_effort_limit
+        actuator.effort_limit_sim = cfg.finger_effort_limit
         embodiment.scene_config.robot.spawn = embodiment.scene_config.robot.spawn.replace(
             func=_spawn_pouring_robot, make_uninstanceable=True
         )
