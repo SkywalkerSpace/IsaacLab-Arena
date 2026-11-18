@@ -316,8 +316,8 @@ def rebuild(stage, plan, args):
     write_json(meta / "info.json", info)
     write_jsonl(meta / "tasks.jsonl", [{"task_index": 0, "task": task}])
     write_jsonl(meta / "episodes.jsonl", episodes)
-    write_jsonl(meta / "episodes_stats.jsonl", episode_stats)
-    write_json(meta / "stats.json", global_stats)
+    # write_jsonl(meta / "episodes_stats.jsonl", episode_stats)
+    # write_json(meta / "stats.json", global_stats)
     if args.gr00t_root:
         regenerate_relative_stats(stage, args)
     write_json(stage / "merge_report.json", {

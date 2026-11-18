@@ -114,9 +114,6 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
 python assets/merge_lerobot_datasets.py \
   --datasets datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay/lerobot datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output datasets/${TSAK_NAME}_merged/lerobot \
-  --gr00t-root submodules/Isaac-GR00T \
-  --embodiment-tag GR1 \
-  --modality-config-path isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
   --apply
 
 
