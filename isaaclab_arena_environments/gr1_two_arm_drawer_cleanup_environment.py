@@ -23,9 +23,10 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
 MUG_POSITION_XY = (-0.1, 0.30)
-DRAWER_POSITION_XY = (-0.20, 0.60)
+DRAWER_POSITION_XY = (-0.20, 0.50)
 MUG_SCALE = (0.1, 0.1, 0.1)
-DRAWER_SCALE = (0.7, 0.7, 0.7)
+DRAWER_SCALE = (0.6, 0.6, 0.6)
+DRAWER_HANDLE_EXTENSION = 0.04  # Additional handle clearance after scaling [m].
 DRAWER_JOINT_NAME = "goal_slidey"
 DRAWER_BODY_NAME = "drawer_link_joint_frame_0"
 
@@ -139,6 +140,42 @@ def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwar
                 material_path = f"{mug_path}/{material_path}"
             sim_utils.bind_physics_material(mug_path, material_path)
     return mug_prim
+
+
+def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **kwargs):
+    """Spawn the cabinet with longer handle supports and matching collision geometry."""
+    import isaaclab.sim as sim_utils
+    from pxr import UsdGeom
+
+    drawer_prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
+    stage = sim_utils.get_current_stage()
+    # The supports run along local -Y; convert the desired world-space extension to asset units.
+    extension = DRAWER_HANDLE_EXTENSION / cfg.scale[1]
+    for drawer_path in sim_utils.find_matching_prim_paths(prim_path):
+        body_path = f"{drawer_path}/Geometry/body_0/object/base/{DRAWER_BODY_NAME}"
+        for purpose in ("visual", "collision"):
+            for geom_id in (12, 13, 14):
+                handle_path = f"{body_path}/geom_{geom_id}_{purpose}"
+                handle_prim = stage.GetPrimAtPath(handle_path)
+                assert handle_prim.IsValid() and handle_prim.IsA(UsdGeom.Cylinder), (
+                    f"Expected a cylindrical drawer handle at {handle_path}"
+                )
+                cylinder = UsdGeom.Cylinder(handle_prim)
+                translate_attr = handle_prim.GetAttribute("xformOp:translate")
+                x, y, z = translate_attr.Get()
+                if geom_id == 13:
+                    # Move the grip without changing its width or thickness.
+                    translate_attr.Set((x, y - extension, z))
+                else:
+                    # Lengthen each support outward while keeping its cabinet-side endpoint fixed.
+                    height = cylinder.GetHeightAttr().Get() + extension
+                    radius = cylinder.GetRadiusAttr().Get()
+                    cylinder.GetHeightAttr().Set(height)
+                    cylinder.GetExtentAttr().Set(
+                        [(-radius, -radius, -height / 2), (radius, radius, height / 2)]
+                    )
+                    translate_attr.Set((x, y - extension / 2, z))
+    return drawer_prim
 
 
 def _drawer_opened(
@@ -540,6 +577,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             prim_path="{ENV_REGEX_NS}/Drawer",
             object_type=ObjectType.ARTICULATION,
             spawner_cfg=sim_utils.UsdFileCfg(
+                func=_spawn_drawer_cabinet,
                 usd_path=cfg.drawer_cabinet_path,
                 scale=DRAWER_SCALE,
                 fix_root_link=True,
