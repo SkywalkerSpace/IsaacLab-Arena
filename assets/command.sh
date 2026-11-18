@@ -25,9 +25,9 @@ gr1_two_arm_pouring, "Pick up the cup, pour the ball into the bowl, then pick up
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
-export TSAK_NAME=gr1_two_arm_can_sort_random
+export TSAK_NAME=
 
-export LANGUAGE_INSTRUCTION="pick the can and put it in the box of the same color"
+export LANGUAGE_INSTRUCTION=
 
 export NUM_RECORDED_DEMOS=300
 

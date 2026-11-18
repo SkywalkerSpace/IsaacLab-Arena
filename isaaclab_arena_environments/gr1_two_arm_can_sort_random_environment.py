@@ -30,14 +30,14 @@ POSITION_XY_RANDOM_MAX = 0.05
 BOX_CLOCKWISE_90_ROTATION_XYZW = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
-BOX_LEFT_POSITION_XY = (-0.30, 0.55)
-BOX_RIGHT_POSITION_XY = (-0.10, 0.55)
+BOX_LEFT_POSITION_XY = (-0.30, 0.50)
+BOX_RIGHT_POSITION_XY = (-0.10, 0.50)
 BOX_SCALE = (0.5, 0.5, 0.5)
 CAN_SCALE = (0.6, 0.6, 1.0)
 CAN_LEFT_POSITION_XY = (0.05, 0.35)
 CAN_RIGHT_POSITION_XY = (1.5, 0.5)
 CAN_HOLDER_PATH = str(_ASSET_DIR / "pouring_cup_holder.usd")
-CAN_HOLDER_HEIGHT = 0.04
+CAN_HOLDER_HEIGHT = 0.05
 CAN_HOLDER_CLEARANCE = 0.005
 # At the narrowest opening, the circular holder has 24 inner edges with vertices at a 28 mm radius.
 CAN_HOLDER_INNER_RADIUS = 0.028 * math.cos(math.pi / 24.0)
