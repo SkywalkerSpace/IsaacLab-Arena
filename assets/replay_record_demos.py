@@ -159,11 +159,17 @@ class ReplayDatasetWriter:
         self._episode = None
         self._file.flush()
 
+    def discard_episode(self):
+        """Discard an incomplete episode so recording can continue with the next one."""
+        if "_pending_episode" in self._file:
+            del self._file["_pending_episode"]
+        self._episode = None
+        self._step_paths = None
+
     def close(self):
         """Discard any incomplete episode and close the file, preserving completed episodes."""
         if self._file:
-            if "_pending_episode" in self._file:
-                del self._file["_pending_episode"]
+            self.discard_episode()
             self._file.close()
 
 
@@ -377,6 +383,7 @@ def main():  # noqa: C901
                 return simulation_app.is_running() and not simulation_app.is_exiting() and not env.sim.is_stopped()
 
             completed = 0
+            skipped = 0
             successes = 0
             with contextlib.suppress(KeyboardInterrupt), torch.inference_mode():
                 env.reset()
@@ -384,24 +391,31 @@ def main():  # noqa: C901
                     if not is_running():
                         break
                     name = episode_names[index]
-                    episode = source.load_episode(name, env.device)
-                    if episode.get_initial_state() is None or episode.get_action(0) is None:
-                        raise ValueError(f"Episode {name} must contain initial_state and at least one action.")
-                    if args_cli.reset_sim_buffer_each_episode:
-                        env.sim.reset()
-                    seed = int(episode.seed) if episode.seed is not None else None
-                    env.reset_to(episode.get_initial_state(), env_ids=None, seed=seed, is_relative=True)
-                    writer.begin_episode(name, _snapshot(env.scene.get_state(is_relative=True), 0), seed)
-                    print(f"Recording episode #{index}: {name}")
-                    if not _record_episode(env, episode, writer, cameras, is_running):
-                        break
-                    success = (
-                        bool(success_term.func(env, **success_term.params)[0]) if success_term else episode.success
-                    )
-                    writer.finish_episode(success, "replay" if success_term else "source_dataset")
+                    try:
+                        episode = source.load_episode(name, env.device)
+                        if episode.get_initial_state() is None or episode.get_action(0) is None:
+                            raise ValueError(f"Episode {name} must contain initial_state and at least one action.")
+                        if args_cli.reset_sim_buffer_each_episode:
+                            env.sim.reset()
+                        seed = int(episode.seed) if episode.seed is not None else None
+                        env.reset_to(episode.get_initial_state(), env_ids=None, seed=seed, is_relative=True)
+                        writer.begin_episode(name, _snapshot(env.scene.get_state(is_relative=True), 0), seed)
+                        print(f"Recording episode #{index}: {name}")
+                        if not _record_episode(env, episode, writer, cameras, is_running):
+                            break
+                        success = (
+                            bool(success_term.func(env, **success_term.params)[0]) if success_term else episode.success
+                        )
+                        writer.finish_episode(success, "replay" if success_term else "source_dataset")
+                    except Exception as exc:
+                        writer.discard_episode()
+                        skipped += 1
+                        print(f"[WARNING] Skipping episode #{index}: {name}: {type(exc).__name__}: {exc}")
+                        continue
                     completed += 1
                     successes += int(bool(success))
             print(f"Saved {completed} complete episodes to: {output_path}")
+            print(f"Skipped {skipped} episodes due to errors.")
             if success_term:
                 print(f"Successfully replayed: {successes}/{completed}")
     finally:
