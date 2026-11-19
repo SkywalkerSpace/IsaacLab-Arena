@@ -49,6 +49,7 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
     lift_tray_pot_path: str = str(_ASSET_DIR / "lift_tray_pot.usd")
     success_max_xy_distance: float = 0.10
     success_max_height_difference: float = 0.10
+    """Maximum object reference height above the pot reference point along pot-local +Z [m]."""
     success_max_speed: float = 2.0
     """Componentwise object velocity limits relative to the pot [m/s, rad/s]."""
     pickup_height: float = 0.05
@@ -178,7 +179,7 @@ def _object_in_pot(
     object_cfg: SceneEntityCfg,
     pot_cfg: SceneEntityCfg,
     max_xy_distance: float = 0.10,
-    max_height_difference: float = 0.08,
+    max_height_difference: float = 0.10,
     max_speed: float = 0.20,
     object_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
     pot_reference_offset: tuple[float, float, float] = (0.0, 0.0, 0.0),
@@ -199,7 +200,7 @@ def _object_in_pot(
     pot_point_W = pot_pos + quat_apply(pot.data.root_quat_w.torch, pot_offset_P)
     displacement_P = quat_apply_inverse(pot.data.root_quat_w.torch, object_point_W - pot_point_W)
     xy_distance = torch.linalg.vector_norm(displacement_P[:, :2], dim=1)
-    height_difference = torch.abs(displacement_P[:, 2])
+    height_difference = displacement_P[:, 2]
     # A carried object may move with the pot; reject motion relative to that rigid motion instead.
     pot_velocity = pot.data.root_vel_w.torch
     expected_linear_velocity = pot_velocity[:, :3] + torch.cross(
@@ -209,6 +210,7 @@ def _object_in_pot(
     relative_angular_velocity = obj.data.root_vel_w.torch[:, 3:] - pot_velocity[:, 3:]
     return (
         (xy_distance < max_xy_distance)
+        & (height_difference >= 0.0)
         & (height_difference < max_height_difference)
         & torch.all(torch.abs(relative_linear_velocity) < max_speed, dim=1)
         & torch.all(torch.abs(relative_angular_velocity) < max_speed, dim=1)
