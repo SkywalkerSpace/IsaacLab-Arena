@@ -146,9 +146,9 @@ def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwar
 
 
 def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **kwargs):
-    """Spawn the cabinet with longer handle supports and matching collision geometry."""
+    """Spawn the cabinet with drawer-length travel limits and extended handle supports."""
     import isaaclab.sim as sim_utils
-    from pxr import UsdGeom
+    from pxr import Usd, UsdGeom, UsdPhysics
 
     drawer_prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
     stage = sim_utils.get_current_stage()
@@ -156,6 +156,18 @@ def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **
     extension = DRAWER_HANDLE_EXTENSION / cfg.scale[1]
     for drawer_path in sim_utils.find_matching_prim_paths(prim_path):
         body_path = f"{drawer_path}/Geometry/body_0/object/base/{DRAWER_BODY_NAME}"
+        body_prim = stage.GetPrimAtPath(body_path)
+        bottom_prim = stage.GetPrimAtPath(f"{body_path}/drawer_bottom_collision")
+        assert bottom_prim.IsValid(), f"Expected drawer floor geometry below {body_path}"
+        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), includedPurposes=[UsdGeom.Tokens.guide])
+        bottom_bounds = bbox_cache.ComputeRelativeBound(bottom_prim, body_prim).ComputeAlignedRange()
+        drawer_length = bottom_bounds.GetSize()[1]
+        assert math.isfinite(drawer_length) and drawer_length > 0, "Drawer length must be finite and positive"
+        joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(f"{drawer_path}/Physics/{DRAWER_JOINT_NAME}"))
+        assert joint, f"Expected prismatic drawer joint below {drawer_path}/Physics"
+        # Joint limits use asset units; the root Y scale also scales the physical travel.
+        joint.CreateLowerLimitAttr(-drawer_length)
+        joint.CreateUpperLimitAttr(0.0)
         for purpose in ("visual", "collision"):
             for geom_id in (12, 13, 14):
                 handle_path = f"{body_path}/geom_{geom_id}_{purpose}"
