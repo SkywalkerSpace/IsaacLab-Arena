@@ -22,11 +22,11 @@ if TYPE_CHECKING:
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
-MUG_POSITION_XY = (-0.1, 0.30)
+MUG_POSITION_XY = (-0.25, 0.30)
 DRAWER_POSITION_XY = (-0.20, 0.50)
 MUG_SCALE = (0.1, 0.1, 0.1)
 DRAWER_SCALE = (0.6, 0.6, 0.6)
-DRAWER_HANDLE_EXTENSION = 0.04  # Additional handle clearance after scaling [m].
+DRAWER_HANDLE_EXTENSION = 0.03  # Additional handle clearance after scaling [m].
 DRAWER_JOINT_NAME = "goal_slidey"
 DRAWER_BODY_NAME = "drawer_link_joint_frame_0"
 
