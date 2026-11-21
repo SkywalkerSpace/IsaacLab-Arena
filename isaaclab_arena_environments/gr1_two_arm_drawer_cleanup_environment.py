@@ -23,7 +23,7 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
 MUG_POSITION_XY = (-0.10, 0.30)
-DRAWER_POSITION_XY = (-0.15, 0.50)
+DRAWER_POSITION_XY = (-0.15, 0.55)
 MUG_SCALE = (0.1, 0.1, 0.1)
 DRAWER_SCALE = (0.6, 0.6, 0.6)
 DRAWER_HANDLE_EXTENSION = 0.02  # Additional handle clearance after scaling [m].
@@ -48,6 +48,8 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     """Componentwise mug velocity limits in m/s (linear) and rad/s (angular)."""
     drawer_open_distance: float = 0.15
     """Minimum opening displacement of the drawer's negative-Y slide joint [m]."""
+    drawer_closed_max_distance: float = 0.01
+    """Maximum absolute slide-joint displacement for a closed drawer at success [m]."""
     mug_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
     """Offset from the mug's bottom reference point in its scaled root frame [m]."""
     drawer_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, -0.08])
@@ -65,6 +67,7 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
             "success_max_height_difference",
             "success_max_speed",
             "drawer_open_distance",
+            "drawer_closed_max_distance",
         ):
             value = getattr(self, name)
             assert math.isfinite(value) and value > 0, f"{name} must be finite and positive"
@@ -193,14 +196,14 @@ def _mug_in_drawer(
     env: ManagerBasedRLEnv,
     mug_cfg: SceneEntityCfg,
     drawer_cfg: SceneEntityCfg,
-    drawer_open_distance: float,
+    drawer_closed_max_distance: float,
     max_xy_distance: float,
     max_height_difference: float,
     max_speed: float,
     mug_reference_offset: tuple[float, float, float],
     drawer_reference_offset: tuple[float, float, float],
 ) -> torch.Tensor:
-    """Check mug placement relative to the open, moving drawer and mug velocity limits."""
+    """Check mug placement and velocity limits with the drawer closed within tolerance."""
     import torch
 
     from isaaclab.utils.math import quat_apply, quat_apply_inverse
@@ -214,8 +217,9 @@ def _mug_in_drawer(
     mug_point_W = mug.data.root_pos_w.torch + quat_apply(mug.data.root_quat_w.torch, mug_offset_M)
     mug_point_D = quat_apply_inverse(T_W_D[:, 3:7], mug_point_W - T_W_D[:, :3])
     delta_D = mug_point_D - mug_point_D.new_tensor(drawer_reference_offset)
+    joint_id = drawer.joint_names.index(DRAWER_JOINT_NAME)
     return (
-        _drawer_opened(env, drawer_cfg, drawer_open_distance)
+        (torch.abs(drawer.data.joint_pos.torch[:, joint_id]) <= drawer_closed_max_distance)
         & (torch.linalg.vector_norm(delta_D[:, :2], dim=1) < max_xy_distance)
         & (torch.abs(delta_D[:, 2]) < max_height_difference)
         & torch.all(torch.abs(mug.data.root_vel_w.torch) < max_speed, dim=1)
@@ -240,7 +244,7 @@ def _configure_two_arm_drawer_cleanup(
 
 @register_environment
 class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerCleanupEnvironmentCfg]):
-    """Lift a mug with the left hand, open the drawer with the right, and place the mug inside."""
+    """Place a mug in the drawer using both hands, then close the drawer."""
 
     name = "gr1_two_arm_drawer_cleanup"
     _legacy_argparse_cfg_type = GR1TwoArmDrawerCleanupEnvironmentCfg
@@ -433,7 +437,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
                     params={
                         "mug_cfg": SceneEntityCfg("mug"),
                         "drawer_cfg": SceneEntityCfg("drawer"),
-                        "drawer_open_distance": cfg.drawer_open_distance,
+                        "drawer_closed_max_distance": cfg.drawer_closed_max_distance,
                         "max_xy_distance": cfg.success_max_xy_distance,
                         "max_height_difference": cfg.success_max_height_difference,
                         "max_speed": cfg.success_max_speed,
@@ -607,7 +611,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
         task = TwoArmDrawerCleanupTask(object=mug, episode_length_s=cfg.episode_length_s)
         task.task_description = (
             "Pick up the mug with the left hand, open the drawer with the right hand, "
-            "then place the mug inside the drawer with the left hand."
+            "then place the mug inside the drawer with the left hand and close the drawer to within 1 cm."
         )
         task.scene_config = DrawerCleanupSceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         task.events_cfg = DrawerCleanupEventsCfg()
