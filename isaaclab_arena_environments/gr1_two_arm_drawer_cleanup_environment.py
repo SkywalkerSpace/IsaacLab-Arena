@@ -22,8 +22,8 @@ if TYPE_CHECKING:
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
-MUG_POSITION_XY = (-0.20, 0.20)
-DRAWER_POSITION_XY = (-0.20, 0.50)
+MUG_POSITION_XY = (-0.10, 0.30)
+DRAWER_POSITION_XY = (-0.15, 0.50)
 MUG_SCALE = (0.1, 0.1, 0.1)
 DRAWER_SCALE = (0.6, 0.6, 0.6)
 DRAWER_HANDLE_EXTENSION = 0.02  # Additional handle clearance after scaling [m].
