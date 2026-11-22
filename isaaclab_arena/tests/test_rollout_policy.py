@@ -152,6 +152,7 @@ def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypat
     env = _wrap_environment(environment)
     policy = _Policy()
     policy.action_chunk_transform = None
+    policy.action_chunk_step_limit = None
     impulse = torch.arange(1.0, 7.0).reshape(3, 2)
     chunks = iter([torch.stack((torch.zeros_like(impulse), impulse), dim=1), torch.zeros(3, 1, 2)])
     pending_actions = iter(())
@@ -159,6 +160,7 @@ def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypat
 
     def get_action(env, obs):
         nonlocal pending_actions
+        assert policy.action_chunk_step_limit == 8
         action = next(pending_actions, None)
         if action is None:
             chunk = policy.action_chunk_transform(next(chunks))
@@ -179,6 +181,7 @@ def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypat
     second = 0.4 * first + 0.6 * (impulse - first)
     torch.testing.assert_close(torch.stack(received), torch.stack((first, second, 0.4 * second)))
     assert policy.action_chunk_transform is None
+    assert policy.action_chunk_step_limit is None
 
 
 def test_rollout_records_smoothed_actions_in_separate_episode_files(tmp_path, monkeypatch):

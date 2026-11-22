@@ -14,6 +14,7 @@ from typing import Any
 import websockets.exceptions
 from openpi_client import websocket_client_policy
 
+from isaaclab_arena.policy.action_scheduling.chunk_blending import crossfade_action_chunks
 from isaaclab_arena.policy.policy_base import PolicyCfg
 from isaaclab_arena.policy.websocket_client import WebsocketClientPolicy
 
@@ -41,9 +42,8 @@ class EmbodimentAdapter(ABC):
 class RemoteChunkReplayPolicy:
     """Mixin implementing openpi-protocol closed-loop control, parameterized by an embodiment adapter.
 
-    Action handling is chunk replay: fetch one ``(chunk, action_dim)`` prediction
-    per env, keep the first ``open_loop_horizon`` actions, and yield them in order before
-    refetching.
+    Fetch one ``(chunk, action_dim)`` prediction per env and replay it up to the execution
+    horizon. If the rollout caps that horizon, retain the unexecuted tail for crossfading.
 
     Concrete policies inherit (RemoteChunkReplayPolicy, PolicyBase[ConcreteCfg]).
     The PolicyBase[ConcreteCfg] is the concrete config class for the policy, parameterized
@@ -99,15 +99,28 @@ class RemoteChunkReplayPolicy:
         num_envs = env.unwrapped.num_envs
         self._maybe_init_per_env_state(num_envs)
 
+        step_limit = self.action_chunk_step_limit
+        if step_limit is not None:
+            assert step_limit > 0, "action_chunk_step_limit must be positive"
+        steps_per_chunk = self._open_loop_horizon if step_limit is None else min(self._open_loop_horizon, step_limit)
+
         actions = []
         for env_id in range(num_envs):
-            chunk_exhausted = (
-                self._cached_action_chunks[env_id] is None or self._next_chunk_steps[env_id] >= self._open_loop_horizon
-            )
-            if chunk_exhausted:
-                self._cached_action_chunks[env_id] = self._fetch_action_chunk(observation, env_id)
+            chunk = self._cached_action_chunks[env_id]
+            if chunk is None or self._next_chunk_steps[env_id] >= steps_per_chunk:
+                new_chunk = self._fetch_action_chunk(observation, env_id)
+                # Read the old cache after the fetch: a reconnect may have invalidated it.
+                previous_chunk = self._cached_action_chunks[env_id]
+                if step_limit is not None and previous_chunk is not None:
+                    new_chunk = crossfade_action_chunks(
+                        torch.from_numpy(previous_chunk),
+                        torch.from_numpy(new_chunk),
+                        self._next_chunk_steps[env_id],
+                        steps_per_chunk,
+                    ).numpy()
+                chunk = self._cached_action_chunks[env_id] = new_chunk
                 self._next_chunk_steps[env_id] = 0
-            actions.append(self._cached_action_chunks[env_id][self._next_chunk_steps[env_id]])
+            actions.append(chunk[self._next_chunk_steps[env_id]])
             self._next_chunk_steps[env_id] += 1
 
         batch = np.stack(actions)  # (num_envs, action_dim)
@@ -152,10 +165,14 @@ class RemoteChunkReplayPolicy:
         assert (
             chunk.shape[0] >= self._open_loop_horizon
         ), f"Server returned horizon {chunk.shape[0]} < configured open_loop_horizon {self._open_loop_horizon}"
+        if self.action_chunk_step_limit is None and self.action_chunk_transform is None:
+            return chunk[: self._open_loop_horizon].astype(np.float32, copy=True)
+
+        chunk = chunk.astype(np.float32, copy=True)
         if self.action_chunk_transform is not None:
-            chunk_tensor = torch.from_numpy(chunk.astype(np.float32, copy=True))
-            return self.action_chunk_transform(chunk_tensor)[: self._open_loop_horizon].numpy()
-        return chunk[: self._open_loop_horizon].astype(np.float32, copy=True)
+            chunk = self.action_chunk_transform(torch.from_numpy(chunk)).numpy()
+        # With crossfading enabled, retain the prediction beyond the executed prefix.
+        return chunk if self.action_chunk_step_limit is not None else chunk[: self._open_loop_horizon]
 
     def _call_server_with_retry(self, server_request: dict[str, Any]) -> dict[str, Any]:
         """Send the request, reconnecting up to ``MAX_RECONNECT_ATTEMPTS`` times.

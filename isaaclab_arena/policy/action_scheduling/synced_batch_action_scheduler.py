@@ -29,6 +29,8 @@ class SyncedBatchActionScheduler(ActionChunkScheduler):
         self,
         fetch_action_tensor_fn: Callable[[], torch.Tensor],
         hold_action: torch.Tensor | None = None,
+        *,
+        step_limit: int | None = None,
     ) -> torch.Tensor:
         """Return one action per env, fetching only when all envs need a new chunk.
 
@@ -36,29 +38,28 @@ class SyncedBatchActionScheduler(ActionChunkScheduler):
             fetch_action_tensor_fn: Callable that queries the action and returns an action tensor.
             hold_action: (num_envs, action_dim) current robot joint state; applied
                 to envs that are waiting for others to catch up. Required for this
-                scheduler — defaulted to ``None`` only to match the base API.
+                    scheduler — defaulted to ``None`` only to match the base API.
+            step_limit: Optional positive execution cap that enables chunk crossfade.
         """
         if hold_action is None:
             raise ValueError("SyncedBatchActionScheduler.get_action requires a hold_action tensor")
+        steps_per_chunk, keep_tail = self._execution_window(step_limit)
         if self.env_requires_new_chunk.all():
             self._n_fetch_calls += 1
             self._total_envs_needed += self.num_envs
             self._per_env_fetch_count += 1
 
             new_chunk = fetch_action_tensor_fn()
-            self.current_action_chunk[:] = new_chunk
-            self.current_action_index[:] = 0
-            self.env_requires_new_chunk[:] = False
+            self._install_chunk(new_chunk, self.env_requires_new_chunk, steps_per_chunk, keep_tail)
 
         waiting = self.env_requires_new_chunk
         batch_idx = torch.arange(self.num_envs, device=self.device)
         action = self.current_action_chunk[batch_idx, self.current_action_index.clamp(min=0)]
         action[waiting] = hold_action[waiting]
 
-        self.current_action_index[~waiting] += 1
-        exhausted = (~waiting) & (self.current_action_index >= self.action_chunk_length)
-        self.current_action_chunk[exhausted] = 0.0
-        self.current_action_index[exhausted] = -1
-        self.env_requires_new_chunk[exhausted] = True
+        if keep_tail:
+            # Once an env spends a step holding, its saved tail is no longer time-aligned.
+            self._discard_chunks(waiting)
+        self._advance_chunks(~waiting, steps_per_chunk, keep_tail)
 
         return action

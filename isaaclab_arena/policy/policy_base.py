@@ -28,6 +28,9 @@ class PolicyBase(ABC, Generic[PolicyCfgT]):
     action_chunk_transform: Callable[[torch.Tensor], torch.Tensor] | None = None
     """Optional rollout transform that chunked policies apply once per fetched chunk."""
 
+    action_chunk_step_limit: int | None = None
+    """Optional cap on executed steps per prediction; blend with any unexecuted tail."""
+
     def __init__(self, config: PolicyCfgT):
         self.config = config
 

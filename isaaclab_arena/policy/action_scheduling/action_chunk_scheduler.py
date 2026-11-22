@@ -11,6 +11,7 @@ import torch
 from collections.abc import Callable
 
 from isaaclab_arena.policy.action_scheduling.action_scheduler import ActionScheduler
+from isaaclab_arena.policy.action_scheduling.chunk_blending import crossfade_action_chunks
 
 
 class ActionChunkScheduler(ActionScheduler):
@@ -55,6 +56,8 @@ class ActionChunkScheduler(ActionScheduler):
         self,
         fetch_action_tensor_fn: Callable[[], torch.Tensor],
         hold_action: torch.Tensor | None = None,
+        *,
+        step_limit: int | None = None,
     ) -> torch.Tensor:
         """Return one action per env, refilling the chunk when needed.
 
@@ -66,22 +69,20 @@ class ActionChunkScheduler(ActionScheduler):
         so the argument is accepted and ignored.
         """
         del hold_action
+        steps_per_chunk, keep_tail = self._execution_window(step_limit)
         if self.env_requires_new_chunk.any():
             new_chunk = fetch_action_tensor_fn()
             mask = self.env_requires_new_chunk
-            self.current_action_chunk[mask] = new_chunk[mask]
-            self.current_action_index[mask] = 0
-            self.env_requires_new_chunk[mask] = False
-
             self._n_fetch_calls += 1
             n_needed = int(mask.sum().item())
             self._total_envs_needed += n_needed
             self._per_env_fetch_count[mask] += 1
+            self._install_chunk(new_chunk, mask, steps_per_chunk, keep_tail)
 
         assert self.current_action_index.min() >= 0, "At least one env's action index is less than 0"
         assert (
-            self.current_action_index.max() < self.action_chunk_length
-        ), "At least one env's action index is greater than the action chunk length"
+            self.current_action_index.max() < steps_per_chunk
+        ), "At least one env's action index is beyond the execution window"
 
         # Take one action per env at the current index (before incrementing)
         batch_idx = torch.arange(self.num_envs, device=self.device)
@@ -91,18 +92,41 @@ class ActionChunkScheduler(ActionScheduler):
             self.action_dim,
         ), f"{action.shape=} != ({self.num_envs}, {self.action_dim})"
 
-        self.current_action_index += 1
-        reset_env_ids = self.current_action_index == self.action_chunk_length
-        self.current_action_chunk[reset_env_ids] = 0.0
-        self.env_requires_new_chunk = self.current_action_index >= self.action_chunk_length
-        self.current_action_index[reset_env_ids] = -1
-
+        self._advance_chunks(~self.env_requires_new_chunk, steps_per_chunk, keep_tail)
         return action
+
+    def _execution_window(self, step_limit: int | None) -> tuple[int, bool]:
+        if step_limit is None:
+            return self.action_chunk_length, False
+        assert step_limit > 0, "step_limit must be positive"
+        steps = min(self.action_chunk_length, step_limit)
+        return steps, steps < self.action_horizon
+
+    def _install_chunk(self, new_chunk: torch.Tensor, mask: torch.Tensor, steps: int, keep_tail: bool) -> None:
+        incoming = new_chunk[mask, : self.action_horizon]
+        if keep_tail:
+            # Natural exhaustion keeps the index at `steps`; reset/hold invalidates the tail.
+            has_tail = self.current_action_index[mask] == steps
+            blended = crossfade_action_chunks(self.current_action_chunk[mask], incoming, steps, steps)
+            incoming = torch.where(has_tail[:, None, None], blended, incoming)
+        self.current_action_chunk[mask] = incoming
+        self.current_action_index[mask] = 0
+        self.env_requires_new_chunk[mask] = False
+
+    def _advance_chunks(self, active: torch.Tensor, steps: int, keep_tail: bool) -> None:
+        self.current_action_index[active] += 1
+        exhausted = active & (self.current_action_index >= steps)
+        self.env_requires_new_chunk[exhausted] = True
+        if not keep_tail:
+            self._discard_chunks(exhausted)
+
+    def _discard_chunks(self, env_ids: torch.Tensor | slice) -> None:
+        self.current_action_chunk[env_ids] = 0.0
+        self.current_action_index[env_ids] = -1
 
     def reset(self, env_ids: torch.Tensor | slice | None = None) -> None:
         """Reset chunking state for the given envs (all if None)."""
         if env_ids is None:
             env_ids = slice(None)
-        self.current_action_chunk[env_ids] = 0.0
-        self.current_action_index[env_ids] = -1
+        self._discard_chunks(env_ids)
         self.env_requires_new_chunk[env_ids] = True

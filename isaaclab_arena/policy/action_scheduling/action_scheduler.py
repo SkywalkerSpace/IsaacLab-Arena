@@ -25,6 +25,8 @@ class ActionScheduler(ABC):
         self,
         fetch_action_tensor_fn: Callable[[], torch.Tensor],
         hold_action: torch.Tensor | None = None,
+        *,
+        step_limit: int | None = None,
     ) -> torch.Tensor:
         """Return one action per env for the current timestep.
 
@@ -33,6 +35,8 @@ class ActionScheduler(ABC):
             hold_action: Optional ``(num_envs, action_dim)`` tensor used by schedulers
                 that need a fallback action for envs waiting on others. Schedulers that don't
                 need it accept ``None`` and ignore the argument so callers can use a uniform call site.
+            step_limit: Optional positive execution cap that enables crossfade between chunks.
+                Keep it fixed between resets.
 
         Returns:
             Per-step action tensor of shape ``(num_envs, action_dim)``.

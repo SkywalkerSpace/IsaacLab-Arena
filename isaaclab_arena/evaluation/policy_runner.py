@@ -105,9 +105,13 @@ def rollout_policy(
     # Keep direct policy use unchanged outside this rollout.
     has_chunk_transform = hasattr(policy, "action_chunk_transform")
     previous_chunk_transform = getattr(policy, "action_chunk_transform", None)
+    has_chunk_step_limit = hasattr(policy, "action_chunk_step_limit")
+    previous_chunk_step_limit = getattr(policy, "action_chunk_step_limit", None)
     try:
         if has_chunk_transform:
             policy.action_chunk_transform = _gaussian_smooth_action_chunk
+        if has_chunk_step_limit:
+            policy.action_chunk_step_limit = 8
         if num_episodes is not None:
             env.unwrapped.configure_episode_limit(num_episodes)
         obs, _ = env.reset()
@@ -197,6 +201,8 @@ def rollout_policy(
     finally:
         if has_chunk_transform:
             policy.action_chunk_transform = previous_chunk_transform
+        if has_chunk_step_limit:
+            policy.action_chunk_step_limit = previous_chunk_step_limit
 
 
 def list_variations(args_parser: argparse.ArgumentParser) -> None:

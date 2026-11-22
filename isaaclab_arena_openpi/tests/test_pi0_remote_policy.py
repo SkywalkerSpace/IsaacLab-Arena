@@ -139,6 +139,23 @@ def test_get_action_caches_chunk_and_advances_index(make_policy):
     assert second_action[0, -1].item() == pytest.approx(0.7)
 
 
+def test_get_action_replans_after_eight_steps_and_keeps_the_full_overlap(monkeypatch):
+    previous = np.arange(128, dtype=np.float32).reshape(16, 8)
+    current = previous + 100
+    chunks = iter((previous, current))
+    _patch_websocket_client(monkeypatch, infer_impl=lambda self, request: {"actions": next(chunks)})
+    policy = Pi0RemotePolicy(Pi0RemotePolicyCfg(policy_variant="pi05", policy_device="cpu"))
+    policy.action_chunk_step_limit = 8
+    policy.set_task_description("pick up the block")
+    env, obs = _fake_env(), _fake_observation()
+
+    actions = torch.cat([policy.get_action(env, obs) for _ in range(16)])
+    old_weights = torch.linspace(1.0, 0.0, 8).unsqueeze(-1)
+    expected_blend = old_weights * torch.from_numpy(previous[8:]) + (1 - old_weights) * torch.from_numpy(current[:8])
+    torch.testing.assert_close(actions[:8], torch.from_numpy(previous[:8]))
+    torch.testing.assert_close(actions[8:], expected_blend)
+
+
 def test_get_action_parallel_envs_loops_per_env(monkeypatch):
     """num_envs>1: one infer per env per chunk refill, batched into (num_envs, action_dim)."""
     call_count = {"n": 0}
