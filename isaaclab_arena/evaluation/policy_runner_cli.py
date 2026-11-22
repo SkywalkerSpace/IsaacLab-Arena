@@ -101,7 +101,7 @@ def add_policy_runner_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--record_actions",
         action="store_true",
-        help="Write actions_rank<RANK>.parquet in the run directory, one row per step and environment slot.",
+        help="Write one actions_rank<RANK>_env<ENV>_episode<EPISODE>.parquet file per rollout episode.",
     )
     parser.add_argument(
         "--output_base_dir",

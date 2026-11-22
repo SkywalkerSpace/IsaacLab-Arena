@@ -82,7 +82,7 @@ def test_zero_action_policy(tmp_path):
         num_steps=NUM_STEPS,
         action_output_dir=tmp_path,
     )
-    (actions_path,) = tmp_path.glob("*/actions_rank0.parquet")
+    (actions_path,) = tmp_path.glob("*/actions_rank0_env0_episode0.parquet")
     actions = pq.ParquetFile(actions_path).read().to_pydict()
     assert actions["step"] == list(range(NUM_STEPS))
     assert actions["env_id"] == [0] * NUM_STEPS

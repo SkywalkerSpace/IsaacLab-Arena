@@ -25,6 +25,11 @@ class _RolloutEnvironment:
         self.steps_completed = 0
         self.completed_episode_count = 0
         self.reset_env_ids = torch.empty(0, dtype=torch.long)
+        self.active_episode_mask = torch.ones(3, dtype=torch.bool)
+        self.episode_indices = [0, 0, 0]
+
+    def get_episode_index(self, env_id):
+        return self.episode_indices[env_id]
 
     def configure_episode_limit(self, num_episodes):
         assert not self.reset_called
@@ -46,6 +51,10 @@ class _RolloutEnvironment:
         truncated = torch.zeros(3, dtype=torch.bool)
         terminated[terminated_env_ids] = True
         truncated[truncated_env_ids] = True
+        self.active_episode_mask[terminated | truncated] = False
+        self.active_episode_mask[self.reset_env_ids] = True
+        for env_id in reset_env_ids:
+            self.episode_indices[env_id] += 1
         return {"step": self.steps_completed}, None, terminated, truncated, {}
 
 
@@ -113,8 +122,13 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert progress_bar.n == 2
 
 
-def test_step_rollout_records_raw_actions_to_parquet(tmp_path, monkeypatch):
-    environment = _RolloutEnvironment([(0, [], [], [])] * 3)
+def test_rollout_records_raw_actions_in_separate_episode_files(tmp_path, monkeypatch):
+    environment = _RolloutEnvironment([
+        (2, [0], [0, 1], []),
+        (2, [], [], []),
+        (3, [], [], [2]),
+        (4, [], [0], []),
+    ])
     policy = _Policy()
     actions = torch.tensor([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
     monkeypatch.setattr(policy, "get_action", lambda env, obs: actions + obs["step"])
@@ -125,24 +139,22 @@ def test_step_rollout_records_raw_actions_to_parquet(tmp_path, monkeypatch):
         return environment.step(actions)
 
     monkeypatch.setattr(env, "step", step_and_mutate_actions)
-    path = tmp_path / "outputs" / "actions_rank0.parquet"
-    with closing(ActionParquetRecorder(path, steps_per_batch=2)) as recorder:
-        policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None, action_recorder=recorder)
-
-    parquet = pq.ParquetFile(path)
-    assert parquet.num_row_groups == 2
-    assert parquet.read().to_pydict() == {
-        "step": [0, 0, 0, 1, 1, 1, 2, 2, 2],
-        "env_id": [0, 1, 2] * 3,
-        "action": [
-            [0.0, 1.0],
-            [2.0, 3.0],
-            [4.0, 5.0],
-            [1.0, 2.0],
-            [3.0, 4.0],
-            [5.0, 6.0],
-            [2.0, 3.0],
-            [4.0, 5.0],
-            [6.0, 7.0],
-        ],
-    }
+    output_dir = tmp_path / "outputs"
+    with closing(ActionParquetRecorder(output_dir, rank=2, steps_per_batch=2)) as recorder:
+        policy_runner.rollout_policy(env, policy, num_steps=None, num_episodes=4, action_recorder=recorder)
+        # Completed files are readable before the recorder closes.
+        expected = {
+            "actions_rank2_env0_episode0.parquet": (0, [[0.0, 1.0]]),
+            "actions_rank2_env0_episode1.parquet": (0, [[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]]),
+            "actions_rank2_env1_episode0.parquet": (1, [[2.0, 3.0]]),
+            "actions_rank2_env2_episode0.parquet": (2, [[4.0, 5.0], [5.0, 6.0], [6.0, 7.0]]),
+        }
+        assert {path.name for path in output_dir.glob("*.parquet")} == expected.keys()
+        for filename, (env_id, actions) in expected.items():
+            with pq.ParquetFile(output_dir / filename) as parquet:
+                assert parquet.num_row_groups == (len(actions) + 1) // 2
+                assert parquet.read().to_pydict() == {
+                    "step": list(range(len(actions))),
+                    "env_id": [env_id] * len(actions),
+                    "action": actions,
+                }

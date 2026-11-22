@@ -52,7 +52,7 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     success_max_lid_angle: float = math.radians(45.0)
     """Maximum lid hinge angle from fully closed for success, in radians."""
     success_max_distance: float = 0.10
-    """Maximum distance from the pod center to the lid's local bounding box, in meters."""
+    """Maximum distance from the pod center to the lid's bounding box, in meters; only its local top side counts."""
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
@@ -243,7 +243,7 @@ def _coffee_machine_lid_closed_with_pod_nearby(
     lid_max: tuple[float, float, float],
     max_distance: float,
 ) -> torch.Tensor:
-    """Require the upper lid to be closed and the pod center near its bounds simultaneously."""
+    """Require the lid to be closed and the pod center near its bounds on the local top side."""
     import torch
 
     from isaaclab.utils.math import quat_apply, quat_apply_inverse
@@ -265,7 +265,8 @@ def _coffee_machine_lid_closed_with_pod_nearby(
     p_L_center = quat_apply_inverse(q_W_L, p_W_center - p_W_L)
     closest_L = torch.clamp(p_L_center, min=p_L_center.new_tensor(lid_min), max=p_L_center.new_tensor(lid_max))
     pod_near_lid = torch.linalg.vector_norm(p_L_center - closest_L, dim=1) <= max_distance
-    return lid_closed & pod_near_lid
+    pod_above_lid = p_L_center[:, 2] >= lid_max[2]
+    return lid_closed & pod_near_lid & pod_above_lid
 
 
 def _configure_two_arm_coffee(

@@ -84,6 +84,8 @@ def rollout_policy(
         if num_episodes is not None:
             env.unwrapped.configure_episode_limit(num_episodes)
         obs, _ = env.reset()
+        if action_recorder is not None:
+            action_recorder.sync_episodes(env.unwrapped)
         policy.reset()
         policy.set_task_description(env.unwrapped.get_language_instruction())
 
@@ -115,6 +117,8 @@ def rollout_policy(
                     policy.reset(env_ids=reset_env_ids)
 
                 if terminated.any() or truncated.any():
+                    if action_recorder is not None:
+                        action_recorder.sync_episodes(env.unwrapped)
                     if hasattr(env.unwrapped.cfg, "metrics") and env.unwrapped.cfg.metrics is not None:
                         metrics = env.unwrapped.compute_metrics()
                         tqdm.tqdm.write(
@@ -277,9 +281,8 @@ def main():
                 from isaaclab_arena.evaluation.action_parquet_recorder import ActionParquetRecorder
 
                 rank = int(os.environ.get("RANK", local_rank))
-                actions_path = os.path.join(output_dir, f"actions_rank{rank}.parquet")
-                action_recording = closing(ActionParquetRecorder(actions_path))
-                print(f"[Rank {rank}/{world_size}] Recording actions to {actions_path}")
+                action_recording = closing(ActionParquetRecorder(output_dir, rank=rank))
+                print(f"[Rank {rank}/{world_size}] Recording per-episode actions in {output_dir}")
             else:
                 action_recording = nullcontext()
 
