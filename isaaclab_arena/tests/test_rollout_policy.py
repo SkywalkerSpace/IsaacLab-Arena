@@ -122,6 +122,32 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert progress_bar.n == 2
 
 
+def test_rollout_smooths_actions_without_carrying_history_across_resets(monkeypatch):
+    environment = _RolloutEnvironment([
+        (0, [], [], []),
+        (1, [1], [1], []),
+        (1, [], [], []),
+    ])
+    policy = _Policy()
+    raw_actions = iter([torch.full((3, 1), value) for value in (2.0, 12.0, 22.0)])
+    monkeypatch.setattr(policy, "get_action", lambda env, obs: next(raw_actions))
+    env = _wrap_environment(environment)
+    received_actions = []
+
+    def step_and_mutate_actions(actions):
+        received_actions.append(actions.clone())
+        actions.zero_()
+        return environment.step(actions)
+
+    monkeypatch.setattr(env, "step", step_and_mutate_actions)
+    policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None)
+
+    torch.testing.assert_close(
+        torch.stack(received_actions).squeeze(-1),
+        torch.tensor([[2.0, 2.0, 2.0], [7.5, 7.5, 7.5], [15.475, 22.0, 15.475]]),
+    )
+
+
 def test_rollout_records_raw_actions_in_separate_episode_files(tmp_path, monkeypatch):
     environment = _RolloutEnvironment([
         (2, [0], [0, 1], []),
