@@ -99,11 +99,16 @@ def add_policy_runner_arguments(parser: argparse.ArgumentParser) -> None:
         help="Record an mp4 video of the rollout viewport (uses gymnasium.wrappers.RecordVideo).",
     )
     parser.add_argument(
+        "--record_actions",
+        action="store_true",
+        help="Write actions_rank<RANK>.parquet in the run directory, one row per step and environment slot.",
+    )
+    parser.add_argument(
         "--output_base_dir",
         type=str,
         default="outputs",
         help=(
-            "Base directory for evaluation outputs (videos, per-episode results, report); a"
+            "Base directory for evaluation outputs (videos, actions, per-episode results, report); a"
             " reverse-dated run subdirectory is added per run."
         ),
     )

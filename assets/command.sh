@@ -230,6 +230,7 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --record_camera_video \
   ${TSAK_NAME} \
   --embodiment gr1_joint
+  # --record_actions
   # --no-randomize_object_poses
 
 

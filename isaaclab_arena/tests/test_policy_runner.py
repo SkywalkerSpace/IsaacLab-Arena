@@ -3,6 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+from pathlib import Path
+
+import pyarrow.parquet as pq
 import pytest
 
 from isaaclab_arena.tests.utils.constants import TestConstants
@@ -24,6 +27,7 @@ def run_policy_runner(
     episode_name: str | None = None,
     enable_cameras: bool = False,
     hydra_overrides: list[str] | None = None,
+    action_output_dir: Path | None = None,
 ) -> None:
     args = [TestConstants.python_path, f"{TestConstants.evaluation_dir}/policy_runner.py"]
     args.append("--policy_type")
@@ -45,6 +49,8 @@ def run_policy_runner(
         args.extend(["--viz", "kit"])
     if enable_cameras:
         args.append("--enable_cameras")
+    if action_output_dir is not None:
+        args.extend(["--record_actions", "--output_base_dir", str(action_output_dir)])
     # automatically detect if the env source is a graph spec yaml or an example-environment name
     # and pass the appropriate argument.
     # NOTE: --env_spec takes the next arg as its value, so example_environment must be
@@ -67,14 +73,20 @@ def run_policy_runner(
 
 
 @pytest.mark.with_subprocess
-def test_zero_action_policy():
+def test_zero_action_policy(tmp_path):
     run_policy_runner(
         policy_type="zero_action",
         example_environment="kitchen_pick_and_place",
         embodiment="franka_ik",
         object_name="cracker_box",
         num_steps=NUM_STEPS,
+        action_output_dir=tmp_path,
     )
+    (actions_path,) = tmp_path.glob("*/actions_rank0.parquet")
+    actions = pq.ParquetFile(actions_path).read().to_pydict()
+    assert actions["step"] == list(range(NUM_STEPS))
+    assert actions["env_id"] == [0] * NUM_STEPS
+    assert all(action and all(value == 0 for value in action) for action in actions["action"])
 
 
 @pytest.mark.with_subprocess

@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import tqdm
+from contextlib import closing, nullcontext
 from importlib import import_module
 from typing import TYPE_CHECKING
 
@@ -28,6 +29,7 @@ from isaaclab_arena.visualization.report import build_report, serve_until_ctrl_c
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
 
 if TYPE_CHECKING:
+    from isaaclab_arena.evaluation.action_parquet_recorder import ActionParquetRecorder
     from isaaclab_arena.metrics.metric_data import MetricsDataCollection
     from isaaclab_arena.policy.policy_base import PolicyBase
 
@@ -68,6 +70,8 @@ def rollout_policy(
     policy: PolicyBase,
     num_steps: int | None,
     num_episodes: int | None,
+    *,
+    action_recorder: ActionParquetRecorder | None = None,
 ) -> MetricsDataCollection | None:
     import torch
 
@@ -96,6 +100,8 @@ def rollout_policy(
             with torch.inference_mode(), Timer("step"):
                 with Timer("policy_inference"):
                     actions = policy.get_action(env, obs)
+                if action_recorder is not None:
+                    action_recorder.record(actions)
                 with Timer("env_step"):
                     obs, _, terminated, truncated, _ = env.step(actions)
 
@@ -266,20 +272,29 @@ def main():
 
         steps_str = f"{num_steps} steps" if num_steps is not None else f"{num_episodes} episodes"
         print(f"[Rank {local_rank}/{world_size}] Starting rollout ({steps_str})")
-        metrics = rollout_policy(env, policy, num_steps, num_episodes)
+        try:
+            if args_cli.record_actions:
+                from isaaclab_arena.evaluation.action_parquet_recorder import ActionParquetRecorder
 
-        if metrics is not None:
-            print(f"[Rank {local_rank}/{world_size}] Metrics: {metrics_to_plain_python_types(metrics)}")
+                rank = int(os.environ.get("RANK", local_rank))
+                actions_path = os.path.join(output_dir, f"actions_rank{rank}.parquet")
+                action_recording = closing(ActionParquetRecorder(actions_path))
+                print(f"[Rank {rank}/{world_size}] Recording actions to {actions_path}")
+            else:
+                action_recording = nullcontext()
 
-        # NOTE(huikang, 2025-12-30)Explicitly clean up the remote policy client / server.
-        # Do NOT rely on a __del__ destructor in policy for this, since destructors are
-        # triggered implicitly and their execution time (or even whether they run)
-        # is not guaranteed, which makes resource cleanup unreliable.
-        if policy.is_remote:
-            policy.shutdown_remote(kill_server=args_cli.remote_kill_on_exit)
+            with action_recording as action_recorder:
+                metrics = rollout_policy(env, policy, num_steps, num_episodes, action_recorder=action_recorder)
 
-        # Close the environment.
-        env.close()
+            if metrics is not None:
+                print(f"[Rank {local_rank}/{world_size}] Metrics: {metrics_to_plain_python_types(metrics)}")
+        finally:
+            try:
+                # Explicitly clean up the remote client/server rather than relying on a destructor.
+                if policy.is_remote:
+                    policy.shutdown_remote(kill_server=args_cli.remote_kill_on_exit)
+            finally:
+                env.close()
 
         # Write and serve the evaluation report.
         # Only the local rank 0 writes/serves it, to avoid races on a shared output dir.

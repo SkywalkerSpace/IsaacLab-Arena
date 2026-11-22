@@ -5,9 +5,13 @@
 
 import io
 import torch
+from contextlib import closing
 from types import SimpleNamespace
 
+import pyarrow.parquet as pq
+
 from isaaclab_arena.evaluation import policy_runner
+from isaaclab_arena.evaluation.action_parquet_recorder import ActionParquetRecorder
 
 
 class _RolloutEnvironment:
@@ -107,3 +111,38 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert policy.reset_calls == [None, [1]]
     assert policy.observed_steps == [0, 1]
     assert progress_bar.n == 2
+
+
+def test_step_rollout_records_raw_actions_to_parquet(tmp_path, monkeypatch):
+    environment = _RolloutEnvironment([(0, [], [], [])] * 3)
+    policy = _Policy()
+    actions = torch.tensor([[0.0, 1.0], [2.0, 3.0], [4.0, 5.0]])
+    monkeypatch.setattr(policy, "get_action", lambda env, obs: actions + obs["step"])
+    env = _wrap_environment(environment)
+
+    def step_and_mutate_actions(actions):
+        actions.zero_()
+        return environment.step(actions)
+
+    monkeypatch.setattr(env, "step", step_and_mutate_actions)
+    path = tmp_path / "outputs" / "actions_rank0.parquet"
+    with closing(ActionParquetRecorder(path, steps_per_batch=2)) as recorder:
+        policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None, action_recorder=recorder)
+
+    parquet = pq.ParquetFile(path)
+    assert parquet.num_row_groups == 2
+    assert parquet.read().to_pydict() == {
+        "step": [0, 0, 0, 1, 1, 1, 2, 2, 2],
+        "env_id": [0, 1, 2] * 3,
+        "action": [
+            [0.0, 1.0],
+            [2.0, 3.0],
+            [4.0, 5.0],
+            [1.0, 2.0],
+            [3.0, 4.0],
+            [5.0, 6.0],
+            [2.0, 3.0],
+            [4.0, 5.0],
+            [6.0, 7.0],
+        ],
+    }
