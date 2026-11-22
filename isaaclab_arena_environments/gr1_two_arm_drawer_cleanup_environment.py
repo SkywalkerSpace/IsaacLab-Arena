@@ -37,7 +37,7 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
 
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
-    episode_length_s: float = 20.0
+    episode_length_s: float = 10.0
     randomize_object_poses: bool = True
     """Randomize object positions and rotations within the configured reset ranges."""
     drawer_cabinet_path: str = str(_ASSET_DIR / "drawer_cabinet.usd")

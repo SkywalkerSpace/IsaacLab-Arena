@@ -52,7 +52,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     teleop_device: str | None = None
     debug_thumb_joints: bool = False  # --debug_thumb_joints
     """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
-    episode_length_s: float = 20.0
+    episode_length_s: float = 10.0
     finger_effort_limit: float = 0.5
     """Per-finger-joint drive torque limit [N m] for the left hand only; preserve right-hand defaults."""
     randomize_object_poses: bool = True

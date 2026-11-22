@@ -42,7 +42,7 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
 
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
-    episode_length_s: float = 20.0
+    episode_length_s: float = 10.0
     randomize_object_poses: bool = True
     """Randomize object poses at reset; disable to restore their fixed initial poses."""
     randomization_seed: int | None = 42

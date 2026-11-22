@@ -41,7 +41,7 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
 
     embodiment: str = "gr1_pink"
     teleop_device: str | None = None
-    episode_length_s: float = 20.0
+    episode_length_s: float = 10.0
     randomize_object_poses: bool = True
     """Randomize object positions and rotations within the configured reset ranges."""
     lift_tray_obj0_path: str = str(_ASSET_DIR / "lift_tray_obj0.usd")
