@@ -97,25 +97,28 @@ def rollout_policy(
             steps_pbar = tqdm.tqdm(desc="Steps", unit="step", position=1, mininterval=0, miniters=1)
 
         num_steps_completed = 0
+        arm_action_dim = 14
         action_ema_alpha = 0.60  # Weight of the current policy action.
-        previous_actions = None
+        previous_arm_actions = None
         reset_env_ids = None
 
         while True:
             with torch.inference_mode(), Timer("step"):
                 with Timer("policy_inference"):
                     actions = policy.get_action(env, obs)
+
+                arm_actions = actions[..., :arm_action_dim]
+                if previous_arm_actions is not None:
+                    smoothed_arm_actions = torch.lerp(previous_arm_actions, arm_actions, action_ema_alpha)
+                    if reset_env_ids is not None and reset_env_ids.numel() > 0:
+                        smoothed_arm_actions[reset_env_ids] = arm_actions[reset_env_ids]
+                    arm_actions = smoothed_arm_actions
+                    actions = torch.cat((arm_actions, actions[..., arm_action_dim:]), dim=-1)
+                # Keep the EMA state independent of any in-place changes by env.step().
+                previous_arm_actions = arm_actions.clone()
+
                 if action_recorder is not None:
                     action_recorder.record(actions)
-
-                # Smooth commands sent to the environment, leaving the recorded policy outputs raw.
-                if previous_actions is not None:
-                    smoothed_actions = torch.lerp(previous_actions, actions, action_ema_alpha)
-                    if reset_env_ids is not None and reset_env_ids.numel() > 0:
-                        smoothed_actions[reset_env_ids] = actions[reset_env_ids]
-                    actions = smoothed_actions
-                # Keep the EMA state independent of any in-place changes by env.step().
-                previous_actions = actions.clone()
                 with Timer("env_step"):
                     obs, _, terminated, truncated, _ = env.step(actions)
 

@@ -24,7 +24,7 @@ class GR1PickPlaceEnvironmentCfg(ArenaEnvironmentCfg):
     embodiment: str = "gr1_pink"
     object: str = "steering_wheel"
     teleop_device: str | None = None
-    episode_length_s: float = 20.0
+    episode_length_s: float = 10.0
 
 
 def _configure_gr1_pick_place(

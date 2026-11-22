@@ -122,14 +122,14 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert progress_bar.n == 2
 
 
-def test_rollout_smooths_actions_without_carrying_history_across_resets(monkeypatch):
+def test_rollout_smooths_only_arm_actions_and_resets_ema_history_per_environment(monkeypatch):
     environment = _RolloutEnvironment([
         (0, [], [], []),
         (1, [1], [1], []),
         (1, [], [], []),
     ])
     policy = _Policy()
-    raw_actions = iter([torch.full((3, 1), value) for value in (2.0, 12.0, 22.0)])
+    raw_actions = iter([torch.full((3, 16), value) for value in (2.0, 12.0, 22.0)])
     monkeypatch.setattr(policy, "get_action", lambda env, obs: next(raw_actions))
     env = _wrap_environment(environment)
     received_actions = []
@@ -142,13 +142,14 @@ def test_rollout_smooths_actions_without_carrying_history_across_resets(monkeypa
     monkeypatch.setattr(env, "step", step_and_mutate_actions)
     policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None)
 
-    torch.testing.assert_close(
-        torch.stack(received_actions).squeeze(-1),
-        torch.tensor([[2.0, 2.0, 2.0], [7.5, 7.5, 7.5], [15.475, 22.0, 15.475]]),
-    )
+    received = torch.stack(received_actions)
+    expected_arm = torch.tensor([[2.0, 2.0, 2.0], [8.0, 8.0, 8.0], [16.4, 22.0, 16.4]])
+    expected_other = torch.tensor([2.0, 12.0, 22.0])
+    torch.testing.assert_close(received[..., :14], expected_arm.unsqueeze(-1).expand(3, 3, 14))
+    torch.testing.assert_close(received[..., 14:], expected_other.view(3, 1, 1).expand(3, 3, 2))
 
 
-def test_rollout_records_raw_actions_in_separate_episode_files(tmp_path, monkeypatch):
+def test_rollout_records_smoothed_actions_in_separate_episode_files(tmp_path, monkeypatch):
     environment = _RolloutEnvironment([
         (2, [0], [0, 1], []),
         (2, [], [], []),
@@ -171,16 +172,15 @@ def test_rollout_records_raw_actions_in_separate_episode_files(tmp_path, monkeyp
         # Completed files are readable before the recorder closes.
         expected = {
             "actions_rank2_env0_episode0.parquet": (0, [[0.0, 1.0]]),
-            "actions_rank2_env0_episode1.parquet": (0, [[1.0, 2.0], [2.0, 3.0], [3.0, 4.0]]),
+            "actions_rank2_env0_episode1.parquet": (0, [[1.0, 2.0], [1.6, 2.6], [2.44, 3.44]]),
             "actions_rank2_env1_episode0.parquet": (1, [[2.0, 3.0]]),
-            "actions_rank2_env2_episode0.parquet": (2, [[4.0, 5.0], [5.0, 6.0], [6.0, 7.0]]),
+            "actions_rank2_env2_episode0.parquet": (2, [[4.0, 5.0], [4.6, 5.6], [5.44, 6.44]]),
         }
         assert {path.name for path in output_dir.glob("*.parquet")} == expected.keys()
         for filename, (env_id, actions) in expected.items():
             with pq.ParquetFile(output_dir / filename) as parquet:
                 assert parquet.num_row_groups == (len(actions) + 1) // 2
-                assert parquet.read().to_pydict() == {
-                    "step": list(range(len(actions))),
-                    "env_id": [env_id] * len(actions),
-                    "action": actions,
-                }
+                table = parquet.read().to_pydict()
+                assert table["step"] == list(range(len(actions)))
+                assert table["env_id"] == [env_id] * len(actions)
+                torch.testing.assert_close(torch.tensor(table["action"]), torch.tensor(actions))

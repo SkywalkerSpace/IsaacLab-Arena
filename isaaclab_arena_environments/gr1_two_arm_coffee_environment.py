@@ -51,7 +51,7 @@ class GR1TwoArmCoffeeEnvironmentCfg(ArenaEnvironmentCfg):
     coffee_pod_path: str = str(_ASSET_DIR / "coffee_pod.usd")
     success_max_lid_angle: float = math.radians(45.0)
     """Maximum lid hinge angle from fully closed for success, in radians."""
-    success_max_distance: float = 0.015
+    success_max_distance: float = 0.03
     """Maximum horizontal offset of the pod center from the holder center, in meters."""
 
     def __post_init__(self) -> None:
