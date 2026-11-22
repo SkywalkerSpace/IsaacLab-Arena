@@ -142,6 +142,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   #--color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
 
 
+# config.json num_inference_timesteps
+
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output-dir ../../models/${TSAK_NAME}_${NUM_GENERATED_DEMOS}/ \
@@ -208,7 +210,7 @@ cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
-  --model-path ../../models/checkpoint-100000 \
+  --model-path ../../models/checkpoint-60000 \
   --embodiment-tag GR1 \
   --device cuda --host 127.0.0.1 --port 5555
 
@@ -254,7 +256,7 @@ cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 python gr00t/eval/open_loop_eval.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
-  --model-path ../../models/${TSAK_NAME}/checkpoint-100000 \
+  --model-path ../../models/${TSAK_NAME}/checkpoint-60000 \
   --embodiment-tag GR1 \
   --traj-ids 0 1 2 3 4 \
   --steps 300 \
