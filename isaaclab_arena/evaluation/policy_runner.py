@@ -10,6 +10,7 @@ import os
 import tqdm
 from contextlib import closing, nullcontext
 from importlib import import_module
+from math import exp
 from typing import TYPE_CHECKING
 
 from isaaclab_arena.assets.registries import PolicyRegistry
@@ -29,6 +30,8 @@ from isaaclab_arena.visualization.report import build_report, serve_until_ctrl_c
 from isaaclab_arena_environments.cli import get_arena_builder_from_cli, get_isaaclab_arena_environments_cli_parser
 
 if TYPE_CHECKING:
+    import torch
+
     from isaaclab_arena.evaluation.action_parquet_recorder import ActionParquetRecorder
     from isaaclab_arena.metrics.metric_data import MetricsDataCollection
     from isaaclab_arena.policy.policy_base import PolicyBase
@@ -65,6 +68,25 @@ def is_distributed(args_cli: argparse.Namespace) -> bool:
     )
 
 
+def _gaussian_smooth_action_chunk(chunk: torch.Tensor) -> torch.Tensor:
+    """Smooth (time, action_dim) or (num_envs, time, action_dim) along time only."""
+    from torch.nn.functional import pad
+
+    length = chunk.shape[-2]
+    if length <= 1:
+        return chunk
+
+    # Five-tap Gaussian (sigma=1 step). Repeat endpoints instead of looking across chunks.
+    neighbor_weight, outer_weight = exp(-0.5), exp(-2.0)
+    normalizer = 1.0 + 2.0 * (neighbor_weight + outer_weight)
+    padded = pad(chunk.transpose(-1, -2), (2, 2), mode="replicate").transpose(-1, -2)
+    return (
+        chunk
+        + neighbor_weight * (padded[..., 1 : length + 1, :] + padded[..., 3 : length + 3, :])
+        + outer_weight * (padded[..., :length, :] + padded[..., 4:, :])
+    ) / normalizer
+
+
 def rollout_policy(
     env,
     policy: PolicyBase,
@@ -80,7 +102,12 @@ def rollout_policy(
 
     pbar = None
     steps_pbar = None
+    # Keep direct policy use unchanged outside this rollout.
+    has_chunk_transform = hasattr(policy, "action_chunk_transform")
+    previous_chunk_transform = getattr(policy, "action_chunk_transform", None)
     try:
+        if has_chunk_transform:
+            policy.action_chunk_transform = _gaussian_smooth_action_chunk
         if num_episodes is not None:
             env.unwrapped.configure_episode_limit(num_episodes)
         obs, _ = env.reset()
@@ -97,9 +124,8 @@ def rollout_policy(
             steps_pbar = tqdm.tqdm(desc="Steps", unit="step", position=1, mininterval=0, miniters=1)
 
         num_steps_completed = 0
-        arm_action_dim = 14
         action_ema_alpha = 0.60  # Weight of the current policy action.
-        previous_arm_actions = None
+        previous_actions = None
         reset_env_ids = None
 
         while True:
@@ -107,15 +133,13 @@ def rollout_policy(
                 with Timer("policy_inference"):
                     actions = policy.get_action(env, obs)
 
-                arm_actions = actions[..., :arm_action_dim]
-                if previous_arm_actions is not None:
-                    smoothed_arm_actions = torch.lerp(previous_arm_actions, arm_actions, action_ema_alpha)
+                if previous_actions is not None:
+                    smoothed_actions = torch.lerp(previous_actions, actions, action_ema_alpha)
                     if reset_env_ids is not None and reset_env_ids.numel() > 0:
-                        smoothed_arm_actions[reset_env_ids] = arm_actions[reset_env_ids]
-                    arm_actions = smoothed_arm_actions
-                    actions = torch.cat((arm_actions, actions[..., arm_action_dim:]), dim=-1)
+                        smoothed_actions[reset_env_ids] = actions[reset_env_ids]
+                    actions = smoothed_actions
                 # Keep the EMA state independent of any in-place changes by env.step().
-                previous_arm_actions = arm_actions.clone()
+                previous_actions = actions.clone()
 
                 if action_recorder is not None:
                     action_recorder.record(actions)
@@ -169,6 +193,10 @@ def rollout_policy(
         if hasattr(env.unwrapped.cfg, "metrics") and env.unwrapped.cfg.metrics is not None:
             return env.unwrapped.compute_metrics()
         return None
+
+    finally:
+        if has_chunk_transform:
+            policy.action_chunk_transform = previous_chunk_transform
 
 
 def list_variations(args_parser: argparse.ArgumentParser) -> None:

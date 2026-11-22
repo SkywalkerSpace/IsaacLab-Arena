@@ -152,6 +152,9 @@ class RemoteChunkReplayPolicy:
         assert (
             chunk.shape[0] >= self._open_loop_horizon
         ), f"Server returned horizon {chunk.shape[0]} < configured open_loop_horizon {self._open_loop_horizon}"
+        if self.action_chunk_transform is not None:
+            chunk_tensor = torch.from_numpy(chunk.astype(np.float32, copy=True))
+            return self.action_chunk_transform(chunk_tensor)[: self._open_loop_horizon].numpy()
         return chunk[: self._open_loop_horizon].astype(np.float32, copy=True)
 
     def _call_server_with_retry(self, server_request: dict[str, Any]) -> dict[str, Any]:

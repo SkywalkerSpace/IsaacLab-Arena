@@ -122,7 +122,7 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert progress_bar.n == 2
 
 
-def test_rollout_smooths_only_arm_actions_and_resets_ema_history_per_environment(monkeypatch):
+def test_rollout_smooths_all_action_dimensions_and_resets_ema_history_per_environment(monkeypatch):
     environment = _RolloutEnvironment([
         (0, [], [], []),
         (1, [1], [1], []),
@@ -143,10 +143,42 @@ def test_rollout_smooths_only_arm_actions_and_resets_ema_history_per_environment
     policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None)
 
     received = torch.stack(received_actions)
-    expected_arm = torch.tensor([[2.0, 2.0, 2.0], [8.0, 8.0, 8.0], [16.4, 22.0, 16.4]])
-    expected_other = torch.tensor([2.0, 12.0, 22.0])
-    torch.testing.assert_close(received[..., :14], expected_arm.unsqueeze(-1).expand(3, 3, 14))
-    torch.testing.assert_close(received[..., 14:], expected_other.view(3, 1, 1).expand(3, 3, 2))
+    expected = torch.tensor([[2.0, 2.0, 2.0], [8.0, 8.0, 8.0], [16.4, 22.0, 16.4]])
+    torch.testing.assert_close(received, expected.unsqueeze(-1).expand_as(received))
+
+
+def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypatch):
+    environment = _RolloutEnvironment([(0, [], [], [])] * 3)
+    env = _wrap_environment(environment)
+    policy = _Policy()
+    policy.action_chunk_transform = None
+    impulse = torch.arange(1.0, 7.0).reshape(3, 2)
+    chunks = iter([torch.stack((torch.zeros_like(impulse), impulse), dim=1), torch.zeros(3, 1, 2)])
+    pending_actions = iter(())
+    received = []
+
+    def get_action(env, obs):
+        nonlocal pending_actions
+        action = next(pending_actions, None)
+        if action is None:
+            chunk = policy.action_chunk_transform(next(chunks))
+            pending_actions = iter(chunk.unbind(dim=1))
+            action = next(pending_actions)
+        return action
+
+    def record_step(actions):
+        received.append(actions.clone())
+        return environment.step(actions)
+
+    monkeypatch.setattr(policy, "get_action", get_action)
+    monkeypatch.setattr(env, "step", record_step)
+    policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None)
+
+    # For a two-step chunk [0, x], endpoint padding puts 0.29869*x at the first step.
+    first = 0.29869003 * impulse
+    second = 0.4 * first + 0.6 * (impulse - first)
+    torch.testing.assert_close(torch.stack(received), torch.stack((first, second, 0.4 * second)))
+    assert policy.action_chunk_transform is None
 
 
 def test_rollout_records_smoothed_actions_in_separate_episode_files(tmp_path, monkeypatch):

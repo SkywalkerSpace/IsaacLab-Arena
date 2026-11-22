@@ -8,6 +8,7 @@ from __future__ import annotations
 import gymnasium as gym
 import torch
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
 from gymnasium.spaces.dict import Dict as GymSpacesDict
 from typing import Generic, TypeVar
@@ -23,6 +24,9 @@ PolicyCfgT = TypeVar("PolicyCfgT", bound=PolicyCfg)
 
 class PolicyBase(ABC, Generic[PolicyCfgT]):
     """Define runtime behavior shared by Arena policies."""
+
+    action_chunk_transform: Callable[[torch.Tensor], torch.Tensor] | None = None
+    """Optional rollout transform that chunked policies apply once per fetched chunk."""
 
     def __init__(self, config: PolicyCfgT):
         self.config = config

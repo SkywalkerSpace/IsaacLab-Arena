@@ -167,7 +167,10 @@ class Gr00tRemoteClosedloopPolicy(PolicyBase[Gr00tRemoteClosedloopPolicyCfg]):
         assert self._chunking_state is not None, "GR00T remote policy has been closed"
 
         def fetch_chunk() -> torch.Tensor:
-            return self._get_action_chunk(observation, self.policy_config.pov_cam_name_sim)
+            chunk = self._get_action_chunk(observation, self.policy_config.pov_cam_name_sim)
+            if self.action_chunk_transform is not None:
+                chunk = self.action_chunk_transform(chunk)
+            return chunk
 
         return self._chunking_state.get_action(
             fetch_chunk,
