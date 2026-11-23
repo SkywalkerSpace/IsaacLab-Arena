@@ -38,6 +38,7 @@ GRASP_MIN_CURLED_FINGERS = 2
 CUP_GRASP_MIN_LIFT = 0.05  # Clear the 4 cm holder with an extra 1 cm of lift.
 # The default cup has 10 mm unscaled walls (7 mm at CUP_SCALE) and a 36 x 34 mm task-space cavity.
 CUP_SCALE = (0.7, 0.7, 1.1)
+ENABLE_POURING_CUP_HOLDER = True  # Set to False to omit the cup holder from the scene.
 CUP_HOLDER_SCALE = (1.0, 1.0, 2.0)  # Raise the authored 2 cm holder to 4 cm without widening it.
 BALL_SCALE = (0.5, 0.5, 0.5)
 BALL_MASS = 0.10  # kg
@@ -306,6 +307,8 @@ def _randomize_pouring_layout(
         cup_yaw = torch.rand(len(env_ids), device=env.device, generator=env._pouring_rng) * CUP_YAW_RANDOM_MAX
     cos_yaw, sin_yaw = torch.cos(cup_yaw), torch.sin(cup_yaw)
     for name, offset_index in (("cup", 0), ("ball", 0), ("cup_holder", 0), ("bowl", 1)):
+        if name == "cup_holder" and name not in positions:
+            continue
         pose = torch.zeros((len(env_ids), 7), device=env.device)
         pose[:, :3] = torch.tensor(positions[name], device=env.device) + env.scene.env_origins[env_ids]
         pose[:, :2] += offsets[:, offset_index]
@@ -363,9 +366,17 @@ def _complete_pouring_replay_state(
 
 
 def _prepare_pouring_replay_state(env, state, env_ids, is_relative):
-    """Complete legacy pouring states at the shared regular/Mimic reset entry point."""
-    restore_env_ids = slice(None) if env_ids is None else env_ids
+    """Match the recorded cup holder state to the current scene at replay reset."""
     positions = env.cfg.events.randomize_pouring_layout.params["positions"]
+    if "cup_holder" not in positions:
+        rigid_objects = state["rigid_object"]
+        if "cup_holder" not in rigid_objects:
+            return state
+        rigid_objects = dict(rigid_objects)
+        del rigid_objects["cup_holder"]
+        return {**state, "rigid_object": rigid_objects}
+
+    restore_env_ids = slice(None) if env_ids is None else env_ids
     return _complete_pouring_replay_state(state, positions, env.scene.env_origins[restore_env_ids], is_relative)
 
 
@@ -512,7 +523,7 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         )
 
     def build(self, cfg: GR1TwoArmPouringEnvironmentCfg) -> IsaacLabArenaEnvironment:
-        """Build the pouring task from stock GR1 configs and pouring USD assets, including a cup holder."""
+        """Build the pouring task from stock GR1 configs and pouring USD assets."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
         from isaaclab.envs.mimic_env_cfg import (
@@ -552,10 +563,10 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         asset_paths = {
             "ball": cfg.pouring_ball_path,
             "cup": cfg.pouring_cup_path,
-            "cup_holder": cfg.pouring_cup_holder_path,
-            "bowl": cfg.pouring_bowl_path,
-            "pad": cfg.pouring_pad_path,
         }
+        if ENABLE_POURING_CUP_HOLDER:
+            asset_paths["cup_holder"] = cfg.pouring_cup_holder_path
+        asset_paths.update(bowl=cfg.pouring_bowl_path, pad=cfg.pouring_pad_path)
         asset_scales = {
             "ball": BALL_SCALE,
             "cup": CUP_SCALE,
@@ -581,13 +592,14 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         ball_min, ball_max = bounds["ball"]
         ball_radius = max(high - low for low, high in zip(ball_min, ball_max)) / 2.0
         cup_center = tuple((low + high) / 2.0 for low, high in zip(cup_min, cup_max))
-        holder_min, holder_max = bounds["cup_holder"]
-        holder_center_xy = tuple((holder_min[index] + holder_max[index]) / 2.0 for index in range(2))
-        positions["cup_holder"] = (
-            positions["cup"][0] + cup_center[0] - holder_center_xy[0],
-            positions["cup"][1] + cup_center[1] - holder_center_xy[1],
-            TABLE_SURFACE_HEIGHT - holder_min[2],
-        )
+        if "cup_holder" in bounds:
+            holder_min, holder_max = bounds["cup_holder"]
+            holder_center_xy = tuple((holder_min[index] + holder_max[index]) / 2.0 for index in range(2))
+            positions["cup_holder"] = (
+                positions["cup"][0] + cup_center[0] - holder_center_xy[0],
+                positions["cup"][1] + cup_center[1] - holder_center_xy[1],
+                TABLE_SURFACE_HEIGHT - holder_min[2],
+            )
         assert cup_max[2] - cup_min[2] > 2.0 * ball_radius, "The ball must fit below the cup rim"
         positions["ball"] = tuple(value + offset for value, offset in zip(positions["cup"], cup_center))
         bowl_min, bowl_max = bounds["bowl"]
@@ -918,11 +930,11 @@ class GR1TwoArmPouringEnvironment(ArenaEnvironmentFactory[GR1TwoArmPouringEnviro
         )
         if cfg.randomize_object_poses:
             task.task_description += (
-                "The cup and bowl independently move by up to 5 cm along each XY axis at reset; "
-                "the ball and cup holder move with the cup so that it starts inside the holder, "
-                "with the ball inside the cup. The cup and holder share a random yaw from 0 to 90 degrees, "
-                "while the pad remains fixed."
+                "The cup and bowl independently move by up to 5 cm along each XY axis at reset. "
+                "The cup starts with the ball inside and a random yaw from 0 to 90 degrees; the pad remains fixed."
             )
+            if "cup_holder" in positions:
+                task.task_description += " The cup starts inside the cup holder, which shares its XY offset and yaw."
         else:
             task.task_description += (
                 "The cup and bowl reset to fixed initial positions; "

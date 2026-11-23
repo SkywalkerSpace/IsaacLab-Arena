@@ -36,6 +36,7 @@ BOX_SCALE = (0.5, 0.5, 0.5)
 CAN_SCALE = (0.6, 0.6, 1.0)
 CAN_LEFT_POSITION_XY = (0.10, 0.30)
 CAN_RIGHT_POSITION_XY = (1.5, 0.5)
+ENABLE_CAN_HOLDER = True  # Set to False to omit both can holders from the scene.
 CAN_HOLDER_PATH = str(_ASSET_DIR / "pouring_cup_holder.usd")
 CAN_HOLDER_HEIGHT = 0.05
 CAN_HOLDER_CLEARANCE = 0.005
@@ -300,6 +301,14 @@ def _object_near_target(
     )
 
 
+def _strip_can_holders_from_replay_state(_env, state, _env_ids, _is_relative):
+    """Ignore recorded holders when replaying in a scene without them."""
+    rigid_objects = state["rigid_object"].copy()
+    rigid_objects.pop("blue_can_holder", None)
+    rigid_objects.pop("red_can_holder", None)
+    return {**state, "rigid_object": rigid_objects}
+
+
 def _configure_two_arm_can_sort_random(
     env_cfg: IsaacLabArenaManagerBasedRLEnvCfg,
 ) -> IsaacLabArenaManagerBasedRLEnvCfg:
@@ -309,6 +318,8 @@ def _configure_two_arm_can_sort_random(
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
     env_cfg = set_control_rate_50hz(env_cfg)
+    if not ENABLE_CAN_HOLDER:
+        env_cfg.reset_to_state_preprocessor = _strip_can_holders_from_replay_state
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
     return env_cfg
@@ -371,27 +382,28 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 # The unused right-side can stays off the table on the ground.
                 right_surface_height = TABLE_SURFACE_HEIGHT if kind == "box" else 0.0
                 right_positions[kind][color] = (*right_xy, right_surface_height + SPAWN_CLEARANCE - min_z)
-                if kind == "can":
+                if ENABLE_CAN_HOLDER and kind == "can":
                     can_bounds[color] = (box.min_point[0].tolist(), box.max_point[0].tolist())
 
-        holder_box = compute_local_bounding_box_from_usd(CAN_HOLDER_PATH)
-        holder_height = (holder_box.max_point[0, 2] - holder_box.min_point[0, 2]).item()
         holder_scales = {}
         holder_offsets = {}
-        for color, (can_min, can_max) in can_bounds.items():
-            # Fit the narrowest opening, not the larger outside diameter or flared rim.
-            can_radius = max(can_max[index] - can_min[index] for index in range(2)) / 2.0
-            scale_xy = (can_radius + CAN_HOLDER_CLEARANCE) / CAN_HOLDER_INNER_RADIUS
-            holder_scales[color] = (scale_xy, scale_xy, CAN_HOLDER_HEIGHT / holder_height)
-            scaled_holder_box = compute_local_bounding_box_from_usd(CAN_HOLDER_PATH, holder_scales[color])
-            holder_min = scaled_holder_box.min_point[0].tolist()
-            holder_max = scaled_holder_box.max_point[0].tolist()
-            # Align geometric centers even when the can's root is offset from its geometry.
-            holder_offsets[color] = (
-                (can_min[0] + can_max[0] - holder_min[0] - holder_max[0]) / 2.0,
-                (can_min[1] + can_max[1] - holder_min[1] - holder_max[1]) / 2.0,
-                can_min[2] - SPAWN_CLEARANCE - holder_min[2],
-            )
+        if ENABLE_CAN_HOLDER:
+            holder_box = compute_local_bounding_box_from_usd(CAN_HOLDER_PATH)
+            holder_height = (holder_box.max_point[0, 2] - holder_box.min_point[0, 2]).item()
+            for color, (can_min, can_max) in can_bounds.items():
+                # Fit the narrowest opening, not the larger outside diameter or flared rim.
+                can_radius = max(can_max[index] - can_min[index] for index in range(2)) / 2.0
+                scale_xy = (can_radius + CAN_HOLDER_CLEARANCE) / CAN_HOLDER_INNER_RADIUS
+                holder_scales[color] = (scale_xy, scale_xy, CAN_HOLDER_HEIGHT / holder_height)
+                scaled_holder_box = compute_local_bounding_box_from_usd(CAN_HOLDER_PATH, holder_scales[color])
+                holder_min = scaled_holder_box.min_point[0].tolist()
+                holder_max = scaled_holder_box.max_point[0].tolist()
+                # Align geometric centers even when the can's root is offset from its geometry.
+                holder_offsets[color] = (
+                    (can_min[0] + can_max[0] - holder_min[0] - holder_max[0]) / 2.0,
+                    (can_min[1] + can_max[1] - holder_min[1] - holder_max[1]) / 2.0,
+                    can_min[2] - SPAWN_CLEARANCE - holder_min[2],
+                )
 
         @configclass
         class CanSortRandomSceneCfg(InteractiveSceneCfg):
@@ -425,7 +437,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 params={
                     "left_positions": left_positions["can"],
                     "right_positions": right_positions["can"],
-                    "holder_offsets": holder_offsets,
+                    "holder_offsets": holder_offsets or None,
                     "randomization_seed": cfg.randomization_seed,
                     "randomize_object_poses": cfg.randomize_object_poses,
                 },
@@ -763,7 +775,9 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
             initial_pose=Pose(position_xyz=right_positions["can"]["red"]),
         )
         can_holders = []
-        for color, can in (("blue", blue_can), ("red", red_can)):
+        cans_by_color = {"blue": blue_can, "red": red_can}
+        for color, offsets in holder_offsets.items():
+            can = cans_by_color[color]
             holder = Object(
                 name=f"{color}_can_holder",
                 prim_path=f"{{ENV_REGEX_NS}}/{color.capitalize()}CanHolder",
@@ -783,7 +797,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 ),
                 initial_pose=Pose(
                     position_xyz=tuple(
-                        value + offset for value, offset in zip(can.initial_pose.position_xyz, holder_offsets[color])
+                        value + offset for value, offset in zip(can.initial_pose.position_xyz, offsets)
                     )
                 ),
             )
