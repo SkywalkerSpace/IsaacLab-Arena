@@ -21,7 +21,7 @@ BOTTOM_THICKNESS = 0.005
 # Preserve the previous exterior chamfer while moving only the inner profile inward.
 CORNER_CHAMFER = 0.007 + (2.0 - math.sqrt(2.0)) * (0.006 - 0.003)
 EDGE_BEVEL = 0.001
-CUP_COLOR = (0.42, 0.28, 0.035)  # Linear RGB: muted ochre yellow, not emissive.
+CUP_COLOR = (0.33, 0.27, 0.055)  # Linear RGB: muted mustard yellow, not emissive.
 
 # Holder XY dimensions are authored at task size; Z is doubled by CUP_HOLDER_SCALE.
 HOLDER_CLEARANCE = 0.005  # Per face, larger than the two 2 mm contact offsets combined.
