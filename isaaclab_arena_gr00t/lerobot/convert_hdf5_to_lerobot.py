@@ -488,16 +488,28 @@ def convert_trajectory_to_df(
     return return_dict
 
 
-def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
+def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig, *, skip_failed_episodes: bool = False):
     """
     Convert the MimcGen HDF5 dataset to Gr00t-LeRobot format.
 
     Args:
         config: Configuration object containing dataset and path information.
-
-    Returns:
-        None
+        skip_failed_episodes: Skip episodes with a false HDF5 success attribute. Keep unlabeled episodes.
     """
+    assert Path(config.hdf5_file_path).exists()
+    hdf5_handler = h5py.File(config.hdf5_file_path, "r")
+    hdf5_data = hdf5_handler["data"]
+    trajectory_ids = []
+    for trajectory_id in hdf5_data:
+        if skip_failed_episodes and not hdf5_data[trajectory_id].attrs.get("success", True):
+            print(f"Skipping trajectory {trajectory_id}: success=False")
+            continue
+        trajectory_ids.append(trajectory_id)
+    if not trajectory_ids:
+        print("No trajectories to convert.")
+        hdf5_handler.close()
+        return
+
     # Create a queue to communicate with the worker processes
     max_queue_size = 10
     num_workers = 4
@@ -509,10 +521,6 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
         worker = mp.Process(target=write_video_job, args=(queue, error_queue, config))
         worker.start()
         workers.append(worker)
-
-    assert Path(config.hdf5_file_path).exists()
-    hdf5_handler = h5py.File(config.hdf5_file_path, "r")
-    hdf5_data = hdf5_handler["data"]
 
     # 1. Generate meta/ folder
     config.lerobot_data_dir.mkdir(parents=True, exist_ok=True)
@@ -528,11 +536,9 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
     video_paths = {}
     video_pairs = _get_video_pairs(config)
 
-    trajectory_ids = list(hdf5_data.keys())
-
     episodes_info = []
-    for episode_index, trajectory_id in enumerate(tqdm(trajectory_ids)):
-
+    for trajectory_id in tqdm(trajectory_ids):
+        episode_index = len(episodes_info)
         try:
             trajectory = hdf5_data[trajectory_id]
 
@@ -618,7 +624,7 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig):
             total_frames=total_length,
             total_tasks=len(tasks),
             total_videos=len(episodes_info) * len(video_pairs),
-            total_chunks=len(trajectory_ids) // config.chunks_size,
+            total_chunks=(len(episodes_info) + config.chunks_size - 1) // config.chunks_size,
             step_data=example_data["data"],
             video_paths=video_paths,
             config=config,
@@ -648,6 +654,11 @@ if __name__ == "__main__":
     parser.add_argument("--yaml_file", help="Path to YAML configuration file", required=True)
     parser.add_argument("--hdf5_name", help="Input HDF5 filename (overrides YAML)")
     parser.add_argument("--language_instruction", help="Task instruction (overrides YAML)")
+    parser.add_argument(
+        "--skip_failed_episodes",
+        action="store_true",
+        help="Skip episodes with HDF5 success=False; keep episodes without a success attribute.",
+    )
     args = parser.parse_args()
 
     config = create_config_from_yaml(args.yaml_file, Gr00tDatasetConfig, args.hdf5_name, args.language_instruction)
@@ -660,4 +671,4 @@ if __name__ == "__main__":
             value = getattr(config, field.name)
             print(f"  {field.name}: {value}")
     print("=" * 50 + "\n")
-    convert_hdf5_to_lerobot(config)
+    convert_hdf5_to_lerobot(config, skip_failed_episodes=args.skip_failed_episodes)

@@ -58,8 +58,8 @@ python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   --dataset_file datasets/${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}.hdf5 \
   --external_callback isaaclab_arena.environments.isaaclab_interop.environment_registration_callback \
   --task ${TSAK_NAME} \
-  --embodiment gr1_pink
-  # --validate_success_rate
+  --embodiment gr1_pink \
+  --validate_success_rate
   # --viz kit 
 
 
@@ -67,6 +67,7 @@ python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
   --hdf5_name ${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay.hdf5 \
   --language_instruction "${LANGUAGE_INSTRUCTION}"
+  # --skip_failed_episodes
 
 
 python3 assets/filter_episodes_by_videos.py \
