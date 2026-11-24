@@ -292,7 +292,9 @@ def main() -> None:
             env = wrap_env_for_video(env, video_cfg, num_steps=None, num_episodes=len(selected))
             # Reuse Arena's episode budget and auto-reset handling. The final reset
             # event restores the next demo before the policy receives its observations.
-            metrics = rollout_policy(env, policy, num_steps=None, num_episodes=len(selected))
+            metrics = rollout_policy(
+                env, policy, num_steps=None, num_episodes=len(selected), action_smoothing=args.action_smoothing
+            )
             if metrics is not None:
                 print(f"Metrics: {metrics_to_plain_python_types(metrics)}")
         finally:

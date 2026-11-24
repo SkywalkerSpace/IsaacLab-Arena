@@ -18,6 +18,9 @@ if TYPE_CHECKING:
     from isaaclab_arena.policy.policy_base import PolicyBase, PolicyCfg
 
 
+DEFAULT_ACTION_SMOOTHING = True
+
+
 # Legacy argparse compatibility
 #
 # Registered policy configs are the source of truth. Until policy_runner receives a
@@ -68,6 +71,12 @@ def build_policy_from_cli(
 
 def add_policy_runner_arguments(parser: argparse.ArgumentParser) -> None:
     """Add policy runner specific arguments to the parser."""
+    parser.add_argument(
+        "--action_smoothing",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_ACTION_SMOOTHING,
+        help="Apply Gaussian chunk smoothing, chunk crossfade, and per-step EMA (default: %(default)s).",
+    )
     parser.add_argument(
         "--policy_type",
         type=str,

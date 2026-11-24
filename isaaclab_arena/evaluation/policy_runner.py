@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from isaaclab_arena.assets.registries import PolicyRegistry
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.evaluation.policy_runner_cli import (
+    DEFAULT_ACTION_SMOOTHING,
     add_policy_cli_args,
     add_policy_runner_arguments,
     build_policy_from_cli,
@@ -94,6 +95,7 @@ def rollout_policy(
     num_episodes: int | None,
     *,
     action_recorder: ActionParquetRecorder | None = None,
+    action_smoothing: bool = DEFAULT_ACTION_SMOOTHING,
 ) -> MetricsDataCollection | None:
     import torch
 
@@ -109,9 +111,10 @@ def rollout_policy(
     previous_chunk_step_limit = getattr(policy, "action_chunk_step_limit", None)
     try:
         if has_chunk_transform:
-            policy.action_chunk_transform = _gaussian_smooth_action_chunk
+            policy.action_chunk_transform = _gaussian_smooth_action_chunk if action_smoothing else None
         if has_chunk_step_limit:
-            policy.action_chunk_step_limit = 8
+            # A step cap enables crossfade with the unexecuted tail of the previous chunk.
+            policy.action_chunk_step_limit = 8 if action_smoothing else None
         if num_episodes is not None:
             env.unwrapped.configure_episode_limit(num_episodes)
         obs, _ = env.reset()
@@ -137,13 +140,14 @@ def rollout_policy(
                 with Timer("policy_inference"):
                     actions = policy.get_action(env, obs)
 
-                if previous_actions is not None:
-                    smoothed_actions = torch.lerp(previous_actions, actions, action_ema_alpha)
-                    if reset_env_ids is not None and reset_env_ids.numel() > 0:
-                        smoothed_actions[reset_env_ids] = actions[reset_env_ids]
-                    actions = smoothed_actions
-                # Keep the EMA state independent of any in-place changes by env.step().
-                previous_actions = actions.clone()
+                if action_smoothing:
+                    if previous_actions is not None:
+                        smoothed_actions = torch.lerp(previous_actions, actions, action_ema_alpha)
+                        if reset_env_ids is not None and reset_env_ids.numel() > 0:
+                            smoothed_actions[reset_env_ids] = actions[reset_env_ids]
+                        actions = smoothed_actions
+                    # Keep the EMA state independent of any in-place changes by env.step().
+                    previous_actions = actions.clone()
 
                 if action_recorder is not None:
                     action_recorder.record(actions)
@@ -336,7 +340,14 @@ def main():
                 action_recording = nullcontext()
 
             with action_recording as action_recorder:
-                metrics = rollout_policy(env, policy, num_steps, num_episodes, action_recorder=action_recorder)
+                metrics = rollout_policy(
+                    env,
+                    policy,
+                    num_steps,
+                    num_episodes,
+                    action_recorder=action_recorder,
+                    action_smoothing=args_cli.action_smoothing,
+                )
 
             if metrics is not None:
                 print(f"[Rank {local_rank}/{world_size}] Metrics: {metrics_to_plain_python_types(metrics)}")

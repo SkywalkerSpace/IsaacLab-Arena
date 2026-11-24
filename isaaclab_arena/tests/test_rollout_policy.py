@@ -3,6 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import argparse
 import io
 import torch
 from contextlib import closing
@@ -182,6 +183,43 @@ def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypat
     torch.testing.assert_close(torch.stack(received), torch.stack((first, second, 0.4 * second)))
     assert policy.action_chunk_transform is None
     assert policy.action_chunk_step_limit is None
+
+
+def test_rollout_cli_can_disable_all_action_smoothing(monkeypatch):
+    parser = argparse.ArgumentParser()
+    policy_runner.add_policy_runner_arguments(parser)
+    assert parser.parse_args([]).action_smoothing is True
+    assert parser.parse_args(["--action_smoothing"]).action_smoothing is True
+    args = parser.parse_args(["--no-action_smoothing"])
+    assert args.action_smoothing is False
+
+    environment = _RolloutEnvironment([(0, [], [], [])] * 2)
+    env = _wrap_environment(environment)
+    policy = _Policy()
+
+    def original_transform(chunk):
+        return chunk + 1
+
+    policy.action_chunk_transform = original_transform
+    policy.action_chunk_step_limit = 4
+    received = []
+
+    def get_action(env, obs):
+        assert policy.action_chunk_transform is None
+        assert policy.action_chunk_step_limit is None
+        return torch.full((3, 1), 10.0 * obs["step"])
+
+    def record_step(actions):
+        received.append(actions.clone())
+        return environment.step(actions)
+
+    monkeypatch.setattr(policy, "get_action", get_action)
+    monkeypatch.setattr(env, "step", record_step)
+    policy_runner.rollout_policy(env, policy, num_steps=2, num_episodes=None, action_smoothing=args.action_smoothing)
+
+    torch.testing.assert_close(torch.stack(received), torch.tensor([0.0, 10.0]).reshape(2, 1, 1).expand(2, 3, 1))
+    assert policy.action_chunk_transform is original_transform
+    assert policy.action_chunk_step_limit == 4
 
 
 def test_rollout_records_smoothed_actions_in_separate_episode_files(tmp_path, monkeypatch):
