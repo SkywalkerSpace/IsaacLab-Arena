@@ -30,6 +30,7 @@ DRAWER_SCALE = (0.6, 0.6, 0.6)
 DRAWER_HANDLE_EXTENSION = 0.02  # Additional handle clearance after scaling [m].
 DRAWER_JOINT_NAME = "goal_slidey"
 DRAWER_BODY_NAME = "drawer_link_joint_frame_0"
+_DRAWER_BODY_REL_PATH = f"Geometry/body_0/object/base/{DRAWER_BODY_NAME}"
 
 
 @dataclass
@@ -146,28 +147,34 @@ def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwar
     return mug_prim
 
 
+def _drawer_floor_length(body_prim) -> float:
+    """Measure the drawer floor along the slide axis in the moving body's local frame."""
+    from pxr import Usd, UsdGeom
+
+    bottom_prim = body_prim.GetChild("drawer_bottom_collision")
+    assert bottom_prim.IsValid(), f"Expected drawer floor geometry below {body_prim.GetPath()}"
+    bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), includedPurposes=[UsdGeom.Tokens.guide])
+    bounds = bbox_cache.ComputeRelativeBound(bottom_prim, body_prim).ComputeAlignedRange()
+    length = bounds.GetSize()[1]
+    assert math.isfinite(length) and length > 0, "Drawer length must be finite and positive"
+    return length
+
+
 def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **kwargs):
     """Spawn the cabinet with drawer-length travel limits and extended handle supports."""
     import isaaclab.sim as sim_utils
-    from pxr import Usd, UsdGeom, UsdPhysics
+    from pxr import UsdGeom, UsdPhysics
 
     drawer_prim = sim_utils.spawn_from_usd(prim_path, cfg, translation=translation, orientation=orientation, **kwargs)
     stage = sim_utils.get_current_stage()
     # The supports run along local -Y; convert the desired world-space extension to asset units.
     extension = DRAWER_HANDLE_EXTENSION / cfg.scale[1]
     for drawer_path in sim_utils.find_matching_prim_paths(prim_path):
-        body_path = f"{drawer_path}/Geometry/body_0/object/base/{DRAWER_BODY_NAME}"
+        body_path = f"{drawer_path}/{_DRAWER_BODY_REL_PATH}"
         body_prim = stage.GetPrimAtPath(body_path)
-        bottom_prim = stage.GetPrimAtPath(f"{body_path}/drawer_bottom_collision")
-        assert bottom_prim.IsValid(), f"Expected drawer floor geometry below {body_path}"
-        bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), includedPurposes=[UsdGeom.Tokens.guide])
-        bottom_bounds = bbox_cache.ComputeRelativeBound(bottom_prim, body_prim).ComputeAlignedRange()
-        drawer_length = bottom_bounds.GetSize()[1]
-        assert math.isfinite(drawer_length) and drawer_length > 0, "Drawer length must be finite and positive"
         joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(f"{drawer_path}/Physics/{DRAWER_JOINT_NAME}"))
         assert joint, f"Expected prismatic drawer joint below {drawer_path}/Physics"
-        # Joint limits use asset units; the root Y scale also scales the physical travel.
-        joint.CreateLowerLimitAttr(-drawer_length)
+        joint.CreateLowerLimitAttr(-_drawer_floor_length(body_prim))
         joint.CreateUpperLimitAttr(0.0)
         for purpose in ("visual", "collision"):
             for geom_id in (12, 13, 14):
@@ -192,6 +199,27 @@ def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **
                     )
                     translate_attr.Set((x, y - extension / 2, z))
     return drawer_prim
+
+
+def _set_drawer_travel_limits(env: ManagerBasedRLEnv, env_ids: torch.Tensor | None) -> None:
+    """Set the simulated slide range from closed to one scaled drawer length open."""
+    import torch
+    from pxr import Gf, UsdGeom
+
+    import isaaclab.sim as sim_utils
+
+    drawer = env.scene["drawer"]
+    body_prim = sim_utils.find_first_matching_prim(f"{drawer.cfg.prim_path}/{_DRAWER_BODY_REL_PATH}")
+    assert body_prim is not None, "Expected a moving drawer body in the spawned cabinet"
+    T_W_D = UsdGeom.XformCache().GetLocalToWorldTransform(body_prim)
+    scale_y = T_W_D.TransformDir(Gf.Vec3d(0, 1, 0)).GetLength()
+    drawer_length = _drawer_floor_length(body_prim) * scale_y
+    num_envs = env.num_envs if env_ids is None else len(env_ids)
+    limits = torch.tensor([-drawer_length, 0.0], dtype=torch.float32, device=env.device).repeat(num_envs, 1, 1)
+    # Set the initialized physics joint in simulation units, independent of how USD scaling is imported.
+    drawer.write_joint_position_limit_to_sim_index(
+        limits=limits, joint_ids=[drawer.joint_names.index(DRAWER_JOINT_NAME)], env_ids=env_ids
+    )
 
 
 def _drawer_opened(
@@ -285,7 +313,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             SubTaskConstraintConfig,
             SubTaskConstraintType,
         )
-        from isaaclab.managers import ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
+        from isaaclab.managers import EventTermCfg, ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
         from isaaclab.scene import InteractiveSceneCfg
         from isaaclab.sensors import CameraCfg
         from isaaclab.utils.configclass import configclass
@@ -327,11 +355,12 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
         class DrawerCleanupSceneCfg(InteractiveSceneCfg):
             left_hand_contact = source_scene.left_hand_contact.replace(filter_prim_paths_expr=["{ENV_REGEX_NS}/Mug"])
             right_hand_contact = source_scene.right_hand_contact.replace(
-                filter_prim_paths_expr=["{ENV_REGEX_NS}/Drawer/Geometry/body_0/object/base/drawer_link_joint_frame_0"]
+                filter_prim_paths_expr=[f"{{ENV_REGEX_NS}}/Drawer/{_DRAWER_BODY_REL_PATH}"]
             )
 
         @configclass
         class DrawerCleanupEventsCfg(EventCfg):
+            set_drawer_travel_limits = EventTermCfg(func=_set_drawer_travel_limits, mode="startup")
             reset_object = None
             reset_mug = source_events.reset_object.replace(
                 params={
