@@ -315,8 +315,8 @@ class GR1TwoArmBoxCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmBoxCleanup
                     spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.05, 5.0)),
                     offset=CameraCfg.OffsetCfg(
                         # The robot faces +Y. Rotate camera forward (+X) to -Y, keeping +Z up (XYZW).
-                        pos=(robot_x, robot_y + 1.0, TABLE_SURFACE_HEIGHT + 0.5),
-                        rot=(0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5)),
+                        pos=(robot_x, robot_y + 1.0, TABLE_SURFACE_HEIGHT + 0.35),
+                        rot=(0.0922959556, 0.0922959556, -0.7010573846, 0.7010573846),
                         convention="world",
                     ),
                 )
