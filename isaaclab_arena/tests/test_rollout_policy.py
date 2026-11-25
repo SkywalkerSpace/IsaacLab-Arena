@@ -201,10 +201,10 @@ def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypat
     assert policy.action_chunk_crossfade_dim_limit == 5
 
 
-def test_rollout_cli_can_disable_finger_smoothing_independently():
+def test_rollout_cli_finger_smoothing_defaults_to_disabled_and_can_be_enabled():
     parser = argparse.ArgumentParser()
     policy_runner.add_policy_runner_arguments(parser)
-    assert parser.parse_args([]).finger_action_smoothing is True
+    assert parser.parse_args([]).finger_action_smoothing is False
     assert parser.parse_args(["--finger_action_smoothing"]).finger_action_smoothing is True
     args = parser.parse_args(["--no-finger_action_smoothing"])
     assert args.finger_action_smoothing is False
