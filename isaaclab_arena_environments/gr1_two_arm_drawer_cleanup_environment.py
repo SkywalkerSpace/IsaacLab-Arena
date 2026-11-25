@@ -28,6 +28,7 @@ DRAWER_POSITION_XY = (-0.15, 0.55)
 MUG_SCALE = (0.1, 0.1, 0.1)
 DRAWER_SCALE = (0.6, 0.6, 0.6)
 DRAWER_HANDLE_EXTENSION = 0.02  # Additional handle clearance after scaling [m].
+DRAWER_TRAVEL_MARGIN = 0.02  # Keep this much of the drawer inside at full opening [m].
 DRAWER_JOINT_NAME = "goal_slidey"
 DRAWER_BODY_NAME = "drawer_link_joint_frame_0"
 _DRAWER_BODY_REL_PATH = f"Geometry/body_0/object/base/{DRAWER_BODY_NAME}"
@@ -147,17 +148,19 @@ def _spawn_drawer_mug(prim_path, cfg, translation=None, orientation=None, **kwar
     return mug_prim
 
 
-def _drawer_floor_length(body_prim) -> float:
-    """Measure the drawer floor along the slide axis in the moving body's local frame."""
-    from pxr import Usd, UsdGeom
+def _drawer_max_travel(body_prim) -> tuple[float, float]:
+    """Return the maximum opening in drawer-local units and in scaled simulation meters."""
+    from pxr import Gf, Usd, UsdGeom
 
     bottom_prim = body_prim.GetChild("drawer_bottom_collision")
     assert bottom_prim.IsValid(), f"Expected drawer floor geometry below {body_prim.GetPath()}"
     bbox_cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), includedPurposes=[UsdGeom.Tokens.guide])
     bounds = bbox_cache.ComputeRelativeBound(bottom_prim, body_prim).ComputeAlignedRange()
-    length = bounds.GetSize()[1]
-    assert math.isfinite(length) and length > 0, "Drawer length must be finite and positive"
-    return length
+    T_W_D = UsdGeom.XformCache().GetLocalToWorldTransform(body_prim)
+    scale_y = T_W_D.TransformDir(Gf.Vec3d(0, 1, 0)).GetLength()
+    travel_m = bounds.GetSize()[1] * scale_y - DRAWER_TRAVEL_MARGIN
+    assert math.isfinite(travel_m) and travel_m > 0, "Scaled drawer length must exceed the travel margin"
+    return travel_m / scale_y, travel_m
 
 
 def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **kwargs):
@@ -174,7 +177,8 @@ def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **
         body_prim = stage.GetPrimAtPath(body_path)
         joint = UsdPhysics.PrismaticJoint(stage.GetPrimAtPath(f"{drawer_path}/Physics/{DRAWER_JOINT_NAME}"))
         assert joint, f"Expected prismatic drawer joint below {drawer_path}/Physics"
-        joint.CreateLowerLimitAttr(-_drawer_floor_length(body_prim))
+        travel_local, _ = _drawer_max_travel(body_prim)
+        joint.CreateLowerLimitAttr(-travel_local)
         joint.CreateUpperLimitAttr(0.0)
         for purpose in ("visual", "collision"):
             for geom_id in (12, 13, 14):
@@ -202,20 +206,17 @@ def _spawn_drawer_cabinet(prim_path, cfg, translation=None, orientation=None, **
 
 
 def _set_drawer_travel_limits(env: ManagerBasedRLEnv, env_ids: torch.Tensor | None) -> None:
-    """Set the simulated slide range from closed to one scaled drawer length open."""
+    """Set the simulated slide range while retaining the full-opening margin."""
     import torch
-    from pxr import Gf, UsdGeom
 
     import isaaclab.sim as sim_utils
 
     drawer = env.scene["drawer"]
     body_prim = sim_utils.find_first_matching_prim(f"{drawer.cfg.prim_path}/{_DRAWER_BODY_REL_PATH}")
     assert body_prim is not None, "Expected a moving drawer body in the spawned cabinet"
-    T_W_D = UsdGeom.XformCache().GetLocalToWorldTransform(body_prim)
-    scale_y = T_W_D.TransformDir(Gf.Vec3d(0, 1, 0)).GetLength()
-    drawer_length = _drawer_floor_length(body_prim) * scale_y
+    _, travel_m = _drawer_max_travel(body_prim)
     num_envs = env.num_envs if env_ids is None else len(env_ids)
-    limits = torch.tensor([-drawer_length, 0.0], dtype=torch.float32, device=env.device).repeat(num_envs, 1, 1)
+    limits = torch.tensor([-travel_m, 0.0], dtype=torch.float32, device=env.device).repeat(num_envs, 1, 1)
     # Set the initialized physics joint in simulation units, independent of how USD scaling is imported.
     drawer.write_joint_position_limit_to_sim_index(
         limits=limits, joint_ids=[drawer.joint_names.index(DRAWER_JOINT_NAME)], env_ids=env_ids
