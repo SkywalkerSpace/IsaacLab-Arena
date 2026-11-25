@@ -27,6 +27,7 @@ class ActionScheduler(ABC):
         hold_action: torch.Tensor | None = None,
         *,
         step_limit: int | None = None,
+        crossfade_dim_limit: int | None = None,
     ) -> torch.Tensor:
         """Return one action per env for the current timestep.
 
@@ -37,6 +38,7 @@ class ActionScheduler(ABC):
                 need it accept ``None`` and ignore the argument so callers can use a uniform call site.
             step_limit: Optional positive execution cap that enables crossfade between chunks.
                 Keep it fixed between resets.
+            crossfade_dim_limit: Only crossfade this many leading action dimensions; None blends all dimensions.
 
         Returns:
             Per-step action tensor of shape ``(num_envs, action_dim)``.

@@ -19,6 +19,7 @@ if TYPE_CHECKING:
 
 
 DEFAULT_ACTION_SMOOTHING = True
+DEFAULT_FINGER_ACTION_SMOOTHING = True
 
 
 # Legacy argparse compatibility
@@ -76,6 +77,15 @@ def add_policy_runner_arguments(parser: argparse.ArgumentParser) -> None:
         action=argparse.BooleanOptionalAction,
         default=DEFAULT_ACTION_SMOOTHING,
         help="Apply Gaussian chunk smoothing, chunk crossfade, and per-step EMA (default: %(default)s).",
+    )
+    parser.add_argument(
+        "--finger_action_smoothing",
+        action=argparse.BooleanOptionalAction,
+        default=DEFAULT_FINGER_ACTION_SMOOTHING,
+        help=(
+            "Include finger actions (after the first 14 dimensions) when --action_smoothing is enabled"
+            " (default: %(default)s)."
+        ),
     )
     parser.add_argument(
         "--policy_type",

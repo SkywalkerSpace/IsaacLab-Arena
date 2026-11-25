@@ -9,6 +9,7 @@ import argparse
 import os
 import tqdm
 from contextlib import closing, nullcontext
+from functools import partial
 from importlib import import_module
 from math import exp
 from typing import TYPE_CHECKING
@@ -17,6 +18,7 @@ from isaaclab_arena.assets.registries import PolicyRegistry
 from isaaclab_arena.cli.isaaclab_arena_cli import get_isaaclab_arena_cli_parser
 from isaaclab_arena.evaluation.policy_runner_cli import (
     DEFAULT_ACTION_SMOOTHING,
+    DEFAULT_FINGER_ACTION_SMOOTHING,
     add_policy_cli_args,
     add_policy_runner_arguments,
     build_policy_from_cli,
@@ -69,8 +71,12 @@ def is_distributed(args_cli: argparse.Namespace) -> bool:
     )
 
 
-def _gaussian_smooth_action_chunk(chunk: torch.Tensor) -> torch.Tensor:
-    """Smooth (time, action_dim) or (num_envs, time, action_dim) along time only."""
+_ARM_ACTION_DIM = 14
+
+
+def _gaussian_smooth_action_chunk(chunk: torch.Tensor, *, action_dim_limit: int | None = None) -> torch.Tensor:
+    """Smooth the leading action dimensions along time in a single or batched chunk."""
+    from torch import cat
     from torch.nn.functional import pad
 
     length = chunk.shape[-2]
@@ -80,12 +86,16 @@ def _gaussian_smooth_action_chunk(chunk: torch.Tensor) -> torch.Tensor:
     # Five-tap Gaussian (sigma=1 step). Repeat endpoints instead of looking across chunks.
     neighbor_weight, outer_weight = exp(-0.5), exp(-2.0)
     normalizer = 1.0 + 2.0 * (neighbor_weight + outer_weight)
-    padded = pad(chunk.transpose(-1, -2), (2, 2), mode="replicate").transpose(-1, -2)
-    return (
-        chunk
+    prefix = chunk[..., :action_dim_limit]
+    padded = pad(prefix.transpose(-1, -2), (2, 2), mode="replicate").transpose(-1, -2)
+    smoothed = (
+        prefix
         + neighbor_weight * (padded[..., 1 : length + 1, :] + padded[..., 3 : length + 3, :])
         + outer_weight * (padded[..., :length, :] + padded[..., 4:, :])
     ) / normalizer
+    if action_dim_limit is not None and action_dim_limit < chunk.shape[-1]:
+        return cat((smoothed, chunk[..., action_dim_limit:]), dim=-1)
+    return smoothed
 
 
 def rollout_policy(
@@ -96,6 +106,7 @@ def rollout_policy(
     *,
     action_recorder: ActionParquetRecorder | None = None,
     action_smoothing: bool = DEFAULT_ACTION_SMOOTHING,
+    finger_action_smoothing: bool = DEFAULT_FINGER_ACTION_SMOOTHING,
 ) -> MetricsDataCollection | None:
     import torch
 
@@ -104,17 +115,24 @@ def rollout_policy(
 
     pbar = None
     steps_pbar = None
+    smoothing_dim_limit = None if finger_action_smoothing else _ARM_ACTION_DIM
     # Keep direct policy use unchanged outside this rollout.
     has_chunk_transform = hasattr(policy, "action_chunk_transform")
     previous_chunk_transform = getattr(policy, "action_chunk_transform", None)
     has_chunk_step_limit = hasattr(policy, "action_chunk_step_limit")
     previous_chunk_step_limit = getattr(policy, "action_chunk_step_limit", None)
+    has_crossfade_dim_limit = hasattr(policy, "action_chunk_crossfade_dim_limit")
+    previous_crossfade_dim_limit = getattr(policy, "action_chunk_crossfade_dim_limit", None)
     try:
         if has_chunk_transform:
-            policy.action_chunk_transform = _gaussian_smooth_action_chunk if action_smoothing else None
+            policy.action_chunk_transform = (
+                partial(_gaussian_smooth_action_chunk, action_dim_limit=smoothing_dim_limit) if action_smoothing else None
+            )
         if has_chunk_step_limit:
             # A step cap enables crossfade with the unexecuted tail of the previous chunk.
             policy.action_chunk_step_limit = 8 if action_smoothing else None
+        if has_crossfade_dim_limit:
+            policy.action_chunk_crossfade_dim_limit = smoothing_dim_limit if action_smoothing else None
         if num_episodes is not None:
             env.unwrapped.configure_episode_limit(num_episodes)
         obs, _ = env.reset()
@@ -132,7 +150,7 @@ def rollout_policy(
 
         num_steps_completed = 0
         action_ema_alpha = 0.60  # Weight of the current policy action.
-        previous_actions = None
+        previous_prefix = None
         reset_env_ids = None
 
         while True:
@@ -141,13 +159,18 @@ def rollout_policy(
                     actions = policy.get_action(env, obs)
 
                 if action_smoothing:
-                    if previous_actions is not None:
-                        smoothed_actions = torch.lerp(previous_actions, actions, action_ema_alpha)
+                    prefix = actions[..., :smoothing_dim_limit]
+                    if previous_prefix is not None:
+                        smoothed = torch.lerp(previous_prefix, prefix, action_ema_alpha)
                         if reset_env_ids is not None and reset_env_ids.numel() > 0:
-                            smoothed_actions[reset_env_ids] = actions[reset_env_ids]
-                        actions = smoothed_actions
+                            smoothed[reset_env_ids] = prefix[reset_env_ids]
+                        if smoothing_dim_limit is not None and smoothing_dim_limit < actions.shape[-1]:
+                            actions = torch.cat((smoothed, actions[..., smoothing_dim_limit:]), dim=-1)
+                        else:
+                            actions = smoothed
+                        prefix = smoothed
                     # Keep the EMA state independent of any in-place changes by env.step().
-                    previous_actions = actions.clone()
+                    previous_prefix = prefix.clone()
 
                 if action_recorder is not None:
                     action_recorder.record(actions)
@@ -207,6 +230,8 @@ def rollout_policy(
             policy.action_chunk_transform = previous_chunk_transform
         if has_chunk_step_limit:
             policy.action_chunk_step_limit = previous_chunk_step_limit
+        if has_crossfade_dim_limit:
+            policy.action_chunk_crossfade_dim_limit = previous_crossfade_dim_limit
 
 
 def list_variations(args_parser: argparse.ArgumentParser) -> None:
@@ -347,6 +372,7 @@ def main():
                     num_episodes,
                     action_recorder=action_recorder,
                     action_smoothing=args_cli.action_smoothing,
+                    finger_action_smoothing=args_cli.finger_action_smoothing,
                 )
 
             if metrics is not None:

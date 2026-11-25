@@ -29,19 +29,20 @@ def _make_chunk() -> torch.Tensor:
 
 
 @pytest.mark.parametrize("scheduler_name", ["ActionChunkScheduler", "SyncedBatchActionScheduler"])
-def test_chunk_crossfade_is_time_aligned_and_skips_reset_envs(scheduler_name):
+@pytest.mark.parametrize("crossfade_dim_limit", [None, 14])
+def test_chunk_crossfade_is_time_aligned_and_skips_reset_envs(scheduler_name, crossfade_dim_limit):
     from isaaclab_arena.policy import action_scheduling
 
     scheduler_cls = getattr(action_scheduling, scheduler_name)
-    scheduler = scheduler_cls(num_envs=2, action_chunk_length=16, action_horizon=16, action_dim=3, device="cpu")
-    previous = torch.arange(96, dtype=torch.float32).reshape(2, 16, 3)
-    current = previous + 100
-    following = previous + 200
+    scheduler = scheduler_cls(num_envs=2, action_chunk_length=16, action_horizon=16, action_dim=16, device="cpu")
+    previous = torch.arange(512, dtype=torch.float32).reshape(2, 16, 16)
+    current = previous + 1000
+    following = previous + 2000
     chunks = iter((previous, current, following))
-    hold = torch.zeros(2, 3)
+    hold = torch.zeros(2, 16)
 
     def step():
-        return scheduler.get_action(lambda: next(chunks), hold, step_limit=8)
+        return scheduler.get_action(lambda: next(chunks), hold, step_limit=8, crossfade_dim_limit=crossfade_dim_limit)
 
     for k in range(8):
         torch.testing.assert_close(step(), previous[:, k])
@@ -50,11 +51,15 @@ def test_chunk_crossfade_is_time_aligned_and_skips_reset_envs(scheduler_name):
     for k in range(8):
         new_fraction = k / 7
         expected = current[:, k].clone()
-        expected[0] = (1 - new_fraction) * previous[0, 8 + k] + new_fraction * current[0, k]
+        blended = (1 - new_fraction) * previous[0, 8 + k] + new_fraction * current[0, k]
+        expected[0, :crossfade_dim_limit] = blended[:crossfade_dim_limit]
         torch.testing.assert_close(step(), expected)
 
     # The blended prefix must not overwrite the tail for the next replan.
-    torch.testing.assert_close(step(), current[:, 8])
+    expected = current[:, 8].clone()
+    if crossfade_dim_limit is not None:
+        expected[:, crossfade_dim_limit:] = following[:, 0, crossfade_dim_limit:]
+    torch.testing.assert_close(step(), expected)
 
 
 # ----------------------------- ActionChunkScheduler ------------------------------

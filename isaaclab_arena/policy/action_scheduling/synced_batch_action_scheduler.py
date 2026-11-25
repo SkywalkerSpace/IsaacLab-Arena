@@ -31,6 +31,7 @@ class SyncedBatchActionScheduler(ActionChunkScheduler):
         hold_action: torch.Tensor | None = None,
         *,
         step_limit: int | None = None,
+        crossfade_dim_limit: int | None = None,
     ) -> torch.Tensor:
         """Return one action per env, fetching only when all envs need a new chunk.
 
@@ -40,6 +41,7 @@ class SyncedBatchActionScheduler(ActionChunkScheduler):
                 to envs that are waiting for others to catch up. Required for this
                     scheduler — defaulted to ``None`` only to match the base API.
             step_limit: Optional positive execution cap that enables chunk crossfade.
+            crossfade_dim_limit: Only crossfade this many leading action dimensions; None blends all dimensions.
         """
         if hold_action is None:
             raise ValueError("SyncedBatchActionScheduler.get_action requires a hold_action tensor")
@@ -50,7 +52,7 @@ class SyncedBatchActionScheduler(ActionChunkScheduler):
             self._per_env_fetch_count += 1
 
             new_chunk = fetch_action_tensor_fn()
-            self._install_chunk(new_chunk, self.env_requires_new_chunk, steps_per_chunk, keep_tail)
+            self._install_chunk(new_chunk, self.env_requires_new_chunk, steps_per_chunk, keep_tail, crossfade_dim_limit)
 
         waiting = self.env_requires_new_chunk
         batch_idx = torch.arange(self.num_envs, device=self.device)

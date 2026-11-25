@@ -176,6 +176,7 @@ class Gr00tRemoteClosedloopPolicy(PolicyBase[Gr00tRemoteClosedloopPolicyCfg]):
             fetch_chunk,
             hold_action=self._extract_hold_action(observation),
             step_limit=self.action_chunk_step_limit,
+            crossfade_dim_limit=self.action_chunk_crossfade_dim_limit,
         )
 
     def _extract_hold_action(self, observation: dict[str, Any]) -> torch.Tensor:

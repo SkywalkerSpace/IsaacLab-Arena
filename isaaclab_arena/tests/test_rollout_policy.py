@@ -10,6 +10,7 @@ from contextlib import closing
 from types import SimpleNamespace
 
 import pyarrow.parquet as pq
+import pytest
 
 from isaaclab_arena.evaluation import policy_runner
 from isaaclab_arena.evaluation.action_parquet_recorder import ActionParquetRecorder
@@ -123,7 +124,8 @@ def test_step_rollout_keeps_its_step_limit_and_resets_actual_reset_environments(
     assert progress_bar.n == 2
 
 
-def test_rollout_smooths_all_action_dimensions_and_resets_ema_history_per_environment(monkeypatch):
+@pytest.mark.parametrize("finger_action_smoothing", [True, False])
+def test_rollout_ema_respects_finger_smoothing_and_resets_history_per_environment(monkeypatch, finger_action_smoothing):
     environment = _RolloutEnvironment([
         (0, [], [], []),
         (1, [1], [1], []),
@@ -141,27 +143,34 @@ def test_rollout_smooths_all_action_dimensions_and_resets_ema_history_per_enviro
         return environment.step(actions)
 
     monkeypatch.setattr(env, "step", step_and_mutate_actions)
-    policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None)
+    policy_runner.rollout_policy(
+        env, policy, num_steps=3, num_episodes=None, finger_action_smoothing=finger_action_smoothing
+    )
 
     received = torch.stack(received_actions)
     expected = torch.tensor([[2.0, 2.0, 2.0], [8.0, 8.0, 8.0], [16.4, 22.0, 16.4]])
-    torch.testing.assert_close(received, expected.unsqueeze(-1).expand_as(received))
+    torch.testing.assert_close(received[..., :14], expected.unsqueeze(-1).expand(3, 3, 14))
+    expected_fingers = expected.unsqueeze(-1) if finger_action_smoothing else torch.tensor([2.0, 12.0, 22.0])[:, None, None]
+    torch.testing.assert_close(received[..., 14:], expected_fingers.expand(3, 3, 2))
 
 
-def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypatch):
+@pytest.mark.parametrize("finger_action_smoothing", [True, False])
+def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypatch, finger_action_smoothing):
     environment = _RolloutEnvironment([(0, [], [], [])] * 3)
     env = _wrap_environment(environment)
     policy = _Policy()
     policy.action_chunk_transform = None
     policy.action_chunk_step_limit = None
-    impulse = torch.arange(1.0, 7.0).reshape(3, 2)
-    chunks = iter([torch.stack((torch.zeros_like(impulse), impulse), dim=1), torch.zeros(3, 1, 2)])
+    policy.action_chunk_crossfade_dim_limit = 5
+    impulse = torch.arange(1.0, 49.0).reshape(3, 16)
+    chunks = iter([torch.stack((torch.zeros_like(impulse), impulse), dim=1), torch.zeros(3, 1, 16)])
     pending_actions = iter(())
     received = []
 
     def get_action(env, obs):
         nonlocal pending_actions
         assert policy.action_chunk_step_limit == 8
+        assert policy.action_chunk_crossfade_dim_limit == (None if finger_action_smoothing else 14)
         action = next(pending_actions, None)
         if action is None:
             chunk = policy.action_chunk_transform(next(chunks))
@@ -175,22 +184,40 @@ def test_rollout_filters_chunks_before_ema_and_keeps_ema_across_chunks(monkeypat
 
     monkeypatch.setattr(policy, "get_action", get_action)
     monkeypatch.setattr(env, "step", record_step)
-    policy_runner.rollout_policy(env, policy, num_steps=3, num_episodes=None)
+    policy_runner.rollout_policy(
+        env, policy, num_steps=3, num_episodes=None, finger_action_smoothing=finger_action_smoothing
+    )
 
     # For a two-step chunk [0, x], endpoint padding puts 0.29869*x at the first step.
     first = 0.29869003 * impulse
     second = 0.4 * first + 0.6 * (impulse - first)
-    torch.testing.assert_close(torch.stack(received), torch.stack((first, second, 0.4 * second)))
+    expected = torch.stack((first, second, 0.4 * second))
+    if not finger_action_smoothing:
+        expected[:, :, 14:] = 0.0
+        expected[1, :, 14:] = impulse[:, 14:]
+    torch.testing.assert_close(torch.stack(received), expected)
     assert policy.action_chunk_transform is None
     assert policy.action_chunk_step_limit is None
+    assert policy.action_chunk_crossfade_dim_limit == 5
 
 
-def test_rollout_cli_can_disable_all_action_smoothing(monkeypatch):
+def test_rollout_cli_can_disable_finger_smoothing_independently():
+    parser = argparse.ArgumentParser()
+    policy_runner.add_policy_runner_arguments(parser)
+    assert parser.parse_args([]).finger_action_smoothing is True
+    assert parser.parse_args(["--finger_action_smoothing"]).finger_action_smoothing is True
+    args = parser.parse_args(["--no-finger_action_smoothing"])
+    assert args.finger_action_smoothing is False
+    assert args.action_smoothing is True
+
+
+@pytest.mark.parametrize("finger_smoothing_flag", ["--finger_action_smoothing", "--no-finger_action_smoothing"])
+def test_rollout_cli_can_disable_all_action_smoothing(monkeypatch, finger_smoothing_flag):
     parser = argparse.ArgumentParser()
     policy_runner.add_policy_runner_arguments(parser)
     assert parser.parse_args([]).action_smoothing is True
     assert parser.parse_args(["--action_smoothing"]).action_smoothing is True
-    args = parser.parse_args(["--no-action_smoothing"])
+    args = parser.parse_args(["--no-action_smoothing", finger_smoothing_flag])
     assert args.action_smoothing is False
 
     environment = _RolloutEnvironment([(0, [], [], [])] * 2)
@@ -202,12 +229,14 @@ def test_rollout_cli_can_disable_all_action_smoothing(monkeypatch):
 
     policy.action_chunk_transform = original_transform
     policy.action_chunk_step_limit = 4
+    policy.action_chunk_crossfade_dim_limit = 5
     received = []
 
     def get_action(env, obs):
         assert policy.action_chunk_transform is None
         assert policy.action_chunk_step_limit is None
-        return torch.full((3, 1), 10.0 * obs["step"])
+        assert policy.action_chunk_crossfade_dim_limit is None
+        return torch.full((3, 16), 10.0 * obs["step"])
 
     def record_step(actions):
         received.append(actions.clone())
@@ -215,11 +244,19 @@ def test_rollout_cli_can_disable_all_action_smoothing(monkeypatch):
 
     monkeypatch.setattr(policy, "get_action", get_action)
     monkeypatch.setattr(env, "step", record_step)
-    policy_runner.rollout_policy(env, policy, num_steps=2, num_episodes=None, action_smoothing=args.action_smoothing)
+    policy_runner.rollout_policy(
+        env,
+        policy,
+        num_steps=2,
+        num_episodes=None,
+        action_smoothing=args.action_smoothing,
+        finger_action_smoothing=args.finger_action_smoothing,
+    )
 
-    torch.testing.assert_close(torch.stack(received), torch.tensor([0.0, 10.0]).reshape(2, 1, 1).expand(2, 3, 1))
+    torch.testing.assert_close(torch.stack(received), torch.tensor([0.0, 10.0]).reshape(2, 1, 1).expand(2, 3, 16))
     assert policy.action_chunk_transform is original_transform
     assert policy.action_chunk_step_limit == 4
+    assert policy.action_chunk_crossfade_dim_limit == 5
 
 
 def test_rollout_records_smoothed_actions_in_separate_episode_files(tmp_path, monkeypatch):

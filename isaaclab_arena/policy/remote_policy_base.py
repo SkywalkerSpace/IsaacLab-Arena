@@ -117,6 +117,7 @@ class RemoteChunkReplayPolicy:
                         torch.from_numpy(new_chunk),
                         self._next_chunk_steps[env_id],
                         steps_per_chunk,
+                        action_dim_limit=self.action_chunk_crossfade_dim_limit,
                     ).numpy()
                 chunk = self._cached_action_chunks[env_id] = new_chunk
                 self._next_chunk_steps[env_id] = 0

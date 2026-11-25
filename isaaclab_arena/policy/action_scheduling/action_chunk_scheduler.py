@@ -58,6 +58,7 @@ class ActionChunkScheduler(ActionScheduler):
         hold_action: torch.Tensor | None = None,
         *,
         step_limit: int | None = None,
+        crossfade_dim_limit: int | None = None,
     ) -> torch.Tensor:
         """Return one action per env, refilling the chunk when needed.
 
@@ -77,7 +78,7 @@ class ActionChunkScheduler(ActionScheduler):
             n_needed = int(mask.sum().item())
             self._total_envs_needed += n_needed
             self._per_env_fetch_count[mask] += 1
-            self._install_chunk(new_chunk, mask, steps_per_chunk, keep_tail)
+            self._install_chunk(new_chunk, mask, steps_per_chunk, keep_tail, crossfade_dim_limit)
 
         assert self.current_action_index.min() >= 0, "At least one env's action index is less than 0"
         assert (
@@ -102,12 +103,16 @@ class ActionChunkScheduler(ActionScheduler):
         steps = min(self.action_chunk_length, step_limit)
         return steps, steps < self.action_horizon
 
-    def _install_chunk(self, new_chunk: torch.Tensor, mask: torch.Tensor, steps: int, keep_tail: bool) -> None:
+    def _install_chunk(
+        self, new_chunk: torch.Tensor, mask: torch.Tensor, steps: int, keep_tail: bool, crossfade_dim_limit: int | None
+    ) -> None:
         incoming = new_chunk[mask, : self.action_horizon]
         if keep_tail:
             # Natural exhaustion keeps the index at `steps`; reset/hold invalidates the tail.
             has_tail = self.current_action_index[mask] == steps
-            blended = crossfade_action_chunks(self.current_action_chunk[mask], incoming, steps, steps)
+            blended = crossfade_action_chunks(
+                self.current_action_chunk[mask], incoming, steps, steps, action_dim_limit=crossfade_dim_limit
+            )
             incoming = torch.where(has_tail[:, None, None], blended, incoming)
         self.current_action_chunk[mask] = incoming
         self.current_action_index[mask] = 0

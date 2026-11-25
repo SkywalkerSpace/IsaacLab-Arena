@@ -9,9 +9,14 @@ import torch
 
 
 def crossfade_action_chunks(
-    previous_chunk: torch.Tensor, new_chunk: torch.Tensor, executed_steps: int, steps_per_chunk: int
+    previous_chunk: torch.Tensor,
+    new_chunk: torch.Tensor,
+    executed_steps: int,
+    steps_per_chunk: int,
+    *,
+    action_dim_limit: int | None = None,
 ) -> torch.Tensor:
-    """Blend aligned predictions over the next execution window, leaving the new tail intact."""
+    """Blend the leading action dimensions over the next execution window, leaving the new tail intact."""
     old_tail = previous_chunk[..., executed_steps:, :]
     overlap = min(old_tail.shape[-2], new_chunk.shape[-2], steps_per_chunk)
     if overlap == 0:
@@ -22,5 +27,8 @@ def crossfade_action_chunks(
         weights = 0.5
     else:
         weights = torch.linspace(0.0, 1.0, overlap, dtype=new_chunk.dtype, device=new_chunk.device).unsqueeze(-1)
-    blended = torch.lerp(old_tail[..., :overlap, :], new_chunk[..., :overlap, :], weights)
-    return torch.cat((blended, new_chunk[..., overlap:, :]), dim=-2)
+    blended = new_chunk.clone()
+    blended[..., :overlap, :action_dim_limit] = torch.lerp(
+        old_tail[..., :overlap, :action_dim_limit], new_chunk[..., :overlap, :action_dim_limit], weights
+    )
+    return blended

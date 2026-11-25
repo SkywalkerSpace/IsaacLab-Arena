@@ -31,6 +31,9 @@ class PolicyBase(ABC, Generic[PolicyCfgT]):
     action_chunk_step_limit: int | None = None
     """Optional cap on executed steps per prediction; blend with any unexecuted tail."""
 
+    action_chunk_crossfade_dim_limit: int | None = None
+    """Only crossfade this many leading action dimensions; None blends all dimensions."""
+
     def __init__(self, config: PolicyCfgT):
         self.config = config
 
