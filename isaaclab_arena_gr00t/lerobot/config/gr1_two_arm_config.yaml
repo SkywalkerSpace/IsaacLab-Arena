@@ -29,6 +29,8 @@ video_name_lerobot:
   - "observation.images.ego_view"
   - "observation.images.left_wrist"
   - "observation.images.right_wrist"
+optional_video_cameras:
+  front_cam_rgb: "observation.images.front_view"
 task_description_lerobot: "annotation.human.action.task_description"
 
 # Parquet configuration

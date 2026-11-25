@@ -69,6 +69,10 @@ class Gr00tDatasetConfig:
     video_name_lerobot: str | list[str] = field(
         default="observation.images.ego_view", metadata={"description": "Name of the video in the LeRobot file."}
     )
+    optional_video_cameras: dict[str, str] = field(
+        default_factory=dict,
+        metadata={"description": "Optional HDF5-to-LeRobot video keys, included only if present in every episode."},
+    )
     task_description_lerobot: str = field(
         default="annotation.human.action.task_description",
         metadata={"description": "Name of the task description in the LeRobot file."},

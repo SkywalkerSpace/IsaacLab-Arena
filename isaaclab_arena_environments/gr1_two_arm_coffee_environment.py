@@ -26,6 +26,7 @@ if TYPE_CHECKING:
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 POSITION_XY_RANDOM_MAX = 0.05
 TABLE_SURFACE_HEIGHT = 1.0
+ENABLE_FRONT_CAM = True  # Set to False to omit the front camera while keeping the other cameras.
 SPAWN_CLEARANCE = 0.000
 COFFEE_OBJECT_SCALE = (1.2, 1.2, 1.2)
 COFFEE_POD_POSITION_XY = (0.2, 0.40)
@@ -276,8 +277,9 @@ def _configure_two_arm_coffee(
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
     env_cfg = set_control_rate_50hz(env_cfg)
+    camera_names = ("robot_pov_cam", "left_wrist_cam", "right_wrist_cam", "front_cam")
     if hasattr(env_cfg.scene, "robot_pov_cam"):
-        env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
+        env_cfg.image_obs_list = [name for name in camera_names if getattr(env_cfg.scene, name, None) is not None]
     return env_cfg
 
 
@@ -475,8 +477,26 @@ class GR1TwoArmCoffeeEnvironment(ArenaEnvironmentFactory[GR1TwoArmCoffeeEnvironm
                 terms = self.obs_buf["subtask_terms"]
                 return {"coffee_pod_grasped": terms["coffee_pod_grasped"][env_ids]}
 
+        robot_x, robot_y, _ = source_scene.robot.init_state.pos
+
         @configclass
         class CoffeeCameraCfg(GR1T2CameraCfg):
+            if ENABLE_FRONT_CAM:
+                front_cam = CameraCfg(
+                    prim_path="{ENV_REGEX_NS}/FrontCam",
+                    update_period=0.0,
+                    height=512,
+                    width=512,
+                    data_types=["rgb"],
+                    spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.05, 5.0)),
+                    offset=CameraCfg.OffsetCfg(
+                        # The robot faces +Y. Rotate camera forward (+X) to -Y, keeping +Z up (XYZW).
+                        pos=(robot_x, robot_y + 1.0, TABLE_SURFACE_HEIGHT + 0.5),
+                        rot=(0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5)),
+                        convention="world",
+                    ),
+                )
+
             left_wrist_cam = CameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/left_hand_pitch_link/LeftWristCam",
                 update_period=0.0,

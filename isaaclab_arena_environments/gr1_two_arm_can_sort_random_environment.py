@@ -36,6 +36,7 @@ BOX_SCALE = (0.5, 0.5, 0.5)
 CAN_SCALE = (0.6, 0.6, 1.0)
 CAN_LEFT_POSITION_XY = (0.10, 0.30)
 CAN_RIGHT_POSITION_XY = (1.5, 0.5)
+ENABLE_FRONT_CAM = True  # Set to False to omit the front camera while keeping the other cameras.
 ENABLE_CAN_HOLDER = True  # Set to False to omit both can holders from the scene.
 CAN_HOLDER_PATH = str(_ASSET_DIR / "pouring_cup_holder.usd")
 CAN_HOLDER_HEIGHT = 0.05
@@ -320,8 +321,9 @@ def _configure_two_arm_can_sort_random(
     env_cfg = set_control_rate_50hz(env_cfg)
     if not ENABLE_CAN_HOLDER:
         env_cfg.reset_to_state_preprocessor = _strip_can_holders_from_replay_state
+    camera_names = ("robot_pov_cam", "left_wrist_cam", "right_wrist_cam", "front_cam")
     if hasattr(env_cfg.scene, "robot_pov_cam"):
-        env_cfg.image_obs_list = ["robot_pov_cam", "left_wrist_cam", "right_wrist_cam"]
+        env_cfg.image_obs_list = [name for name in camera_names if getattr(env_cfg.scene, name, None) is not None]
     return env_cfg
 
 
@@ -530,8 +532,26 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 terms = self.obs_buf["subtask_terms"]
                 return {"handoff": terms["handoff"][env_ids]}
 
+        robot_x, robot_y, _ = source_scene.robot.init_state.pos
+
         @configclass
         class CanSortRandomCameraCfg(GR1T2CameraCfg):
+            if ENABLE_FRONT_CAM:
+                front_cam = CameraCfg(
+                    prim_path="{ENV_REGEX_NS}/FrontCam",
+                    update_period=0.0,
+                    height=512,
+                    width=512,
+                    data_types=["rgb"],
+                    spawn=sim_utils.PinholeCameraCfg(focal_length=18.15, clipping_range=(0.05, 5.0)),
+                    offset=CameraCfg.OffsetCfg(
+                        # The robot faces +Y. Rotate camera forward (+X) to -Y, keeping +Z up (XYZW).
+                        pos=(robot_x, robot_y + 1.0, TABLE_SURFACE_HEIGHT + 0.5),
+                        rot=(0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5)),
+                        convention="world",
+                    ),
+                )
+
             left_wrist_cam = CameraCfg(
                 prim_path="{ENV_REGEX_NS}/Robot/left_hand_pitch_link/LeftWristCam",
                 update_period=0.0,

@@ -6,11 +6,12 @@
 
 Example::
 
-    uv run python scripts/tools/replay_record_demos.py --dataset_file datasets/dataset.hdf5 \
-        --output_file datasets/dataset_replay.hdf5 --camera_names table_cam wrist_cam
+    uv run python assets/replay_record_demos.py --dataset_file datasets/dataset.hdf5 \
+        --output_file datasets/dataset_replay.hdf5 --enable_cameras
 
-The task is read from the input dataset unless overridden with ``--task``. Cameras must already
-be configured in the task's scene with RGB or RGBA output. All RGB cameras are recorded by default.
+The task is read from the input dataset unless overridden with ``--task``. By default, replay records
+all RGB/RGBA cameras present in the task's scene, including the GR1 ``front_cam`` when configured
+(saved as ``camera_obs/front_cam_rgb``). Use ``--camera_names`` to record only a selected subset.
 Episodes are replayed sequentially in one environment; the input dataset is never modified and an
 existing output file is never overwritten. No LeRobot conversion or MP4 encoding is performed.
 
@@ -295,7 +296,7 @@ def main():  # noqa: C901
         import torch
 
         from isaaclab.devices import Se3Keyboard, Se3KeyboardCfg
-        from isaaclab.sensors import Camera
+        from isaaclab.sensors import Camera, TiledCamera
         from isaaclab.utils.datasets import HDF5DatasetFileHandler
 
         import isaaclab_tasks  # noqa: F401
@@ -337,7 +338,7 @@ def main():  # noqa: C901
             available_cameras = {
                 name: sensor
                 for name, sensor in env.scene.sensors.items()
-                if isinstance(sensor, Camera) and {"rgb", "rgba"}.intersection(sensor.cfg.data_types)
+                if isinstance(sensor, (Camera, TiledCamera)) and {"rgb", "rgba"}.intersection(sensor.cfg.data_types)
             }
             camera_names = args_cli.camera_names or list(available_cameras)
             if not camera_names or any(name not in available_cameras for name in camera_names):

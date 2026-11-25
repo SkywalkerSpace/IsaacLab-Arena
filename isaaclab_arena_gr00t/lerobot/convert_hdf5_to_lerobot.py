@@ -54,11 +54,34 @@ def _get_video_pairs(config: Gr00tDatasetConfig) -> list[tuple[str, str]]:
     return list(zip(camera_names, video_names))
 
 
-def generate_modality(config: Gr00tDatasetConfig) -> dict[str, Any]:
-    """Load the modality template with video entries matching the configured cameras."""
+def _resolve_video_pairs(
+    config: Gr00tDatasetConfig, hdf5_data: h5py.Group, trajectory_ids: list[str]
+) -> list[tuple[str, str]]:
+    """Include optional videos only if every selected episode has them, keeping one dataset-wide schema."""
+    video_pairs = _get_video_pairs(config)
+    camera_names, video_names = map(set, zip(*video_pairs))
+    for camera_name, video_name in config.optional_video_cameras.items():
+        if not camera_name or not video_name or camera_name in camera_names or video_name in video_names:
+            raise ValueError(f"Empty or duplicate optional camera/video key: {camera_name!r} -> {video_name!r}")
+        camera_names.add(camera_name)
+        video_names.add(video_name)
+        present = sum(f"{trajectory_id}/camera_obs/{camera_name}" in hdf5_data for trajectory_id in trajectory_ids)
+        if not present:
+            continue
+        if present == len(trajectory_ids):
+            video_pairs.append((camera_name, video_name))
+        else:
+            print(f"Skipping optional camera '{camera_name}': found in {present}/{len(trajectory_ids)} episodes.")
+    return video_pairs
+
+
+def generate_modality(config: Gr00tDatasetConfig, video_pairs: list[tuple[str, str]] | None = None) -> dict[str, Any]:
+    """Load the modality template with video entries matching the videos being converted."""
+    if video_pairs is None:
+        video_pairs = _get_video_pairs(config)
     modality = load_json(config.modality_template_path)
     modality["video"] = {}
-    for _, video_key in _get_video_pairs(config):
+    for _, video_key in video_pairs:
         modality_name = video_key.rsplit(".", 1)[-1]
         assert modality_name not in modality["video"], f"Duplicate video modality name: {modality_name}"
         modality["video"][modality_name] = {"original_key": video_key}
@@ -510,6 +533,12 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig, *, skip_failed_episodes:
         hdf5_handler.close()
         return
 
+    try:
+        video_pairs = _resolve_video_pairs(config, hdf5_data, trajectory_ids)
+    except Exception:
+        hdf5_handler.close()
+        raise
+
     # Create a queue to communicate with the worker processes
     max_queue_size = 10
     num_workers = 4
@@ -534,7 +563,6 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig, *, skip_failed_episodes:
     total_length = 0
     example_data = None
     video_paths = {}
-    video_pairs = _get_video_pairs(config)
 
     episodes_info = []
     for trajectory_id in tqdm(trajectory_ids):
@@ -604,7 +632,7 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig, *, skip_failed_episodes:
 
     # 3.3. Generate modality.json
     modality_path = lerobot_meta_dir / config.modality_fname
-    dump_json(generate_modality(config), modality_path, indent=4)
+    dump_json(generate_modality(config, video_pairs), modality_path, indent=4)
 
     try:
         # Check for errors in the error queue
