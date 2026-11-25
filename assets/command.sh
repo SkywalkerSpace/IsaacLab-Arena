@@ -25,9 +25,9 @@ gr1_two_arm_pouring, "Pick up the cup, pour the ball into the bowl, then pick up
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
-export TSAK_NAME=gr1_two_arm_coffee
+export TSAK_NAME=
 
-export LANGUAGE_INSTRUCTION="insert the coffee pod into the coffee machine and close the lid"
+export LANGUAGE_INSTRUCTION=
 
 export NUM_RECORDED_DEMOS=300
 
