@@ -3,7 +3,7 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-"""External GR1 two-arm configuration with head, left-wrist, and right-wrist images."""
+"""External GR1 two-arm configuration with head, wrist, and front-view images."""
 
 from gr00t.configs.data.embodiment_configs import register_modality_config
 from gr00t.data.embodiment_tags import EmbodimentTag
@@ -12,7 +12,7 @@ from gr00t.data.types import ActionConfig, ActionFormat, ActionRepresentation, A
 gr1_two_arm_config = {
     "video": ModalityConfig(
         delta_indices=[0],
-        modality_keys=["ego_view", "left_wrist", "right_wrist"],
+        modality_keys=["ego_view", "left_wrist", "right_wrist", "front_view"],
     ),
     "state": ModalityConfig(
         delta_indices=[0],

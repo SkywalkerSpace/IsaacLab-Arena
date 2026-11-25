@@ -21,7 +21,7 @@ action_chunk_length: 16
 task_mode_name: gr1_tabletop_manipulation
 
 # Keep the camera order aligned with gr1_two_arm_data_config.py video.modality_keys.
-pov_cam_name_sim: ["robot_pov_cam_rgb", "left_wrist_cam_rgb", "right_wrist_cam_rgb"]
+pov_cam_name_sim: ["robot_pov_cam_rgb", "left_wrist_cam_rgb", "right_wrist_cam_rgb", "front_cam_rgb"]
 
 original_image_size: [512, 512, 3]
 target_image_size: [512, 512, 3]

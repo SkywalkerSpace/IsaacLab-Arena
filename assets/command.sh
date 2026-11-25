@@ -63,6 +63,9 @@ python submodules/IsaacLab/scripts/tools/replay_record_demos.py \
   # --viz kit 
 
 
+# The GR1 two-arm configs below require four views: head, left wrist, right wrist, and front.
+# For older demos, replay with --enable_cameras and ENABLE_FRONT_CAM=True, then reconvert.
+# Use only four-view LeRobot datasets and matching four-view checkpoints with these configs.
 python isaaclab_arena_gr00t/lerobot/convert_hdf5_to_lerobot.py \
   --yaml_file isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml \
   --hdf5_name ${TSAK_NAME}_recorded_${NUM_RECORDED_DEMOS}_replay.hdf5 \

@@ -20,7 +20,8 @@ hdf5_name: "two_arm_box_cleanup_generated_1000.hdf5"
 # Mimic-generated HDF5 datafield names
 state_name_sim: "robot_joint_pos"
 action_name_sim: "processed_actions"
-pov_cam_name_sim: ["robot_pov_cam_rgb", "left_wrist_cam_rgb", "right_wrist_cam_rgb"]
+# Keep this order aligned with video_name_lerobot and the GR00T policy configuration.
+pov_cam_name_sim: ["robot_pov_cam_rgb", "left_wrist_cam_rgb", "right_wrist_cam_rgb", "front_cam_rgb"]
 
 # Gr00t-LeRobot datafield names
 state_name_lerobot: "observation.state"
@@ -29,8 +30,7 @@ video_name_lerobot:
   - "observation.images.ego_view"
   - "observation.images.left_wrist"
   - "observation.images.right_wrist"
-optional_video_cameras:
-  front_cam_rgb: "observation.images.front_view"
+  - "observation.images.front_view"
 task_description_lerobot: "annotation.human.action.task_description"
 
 # Parquet configuration

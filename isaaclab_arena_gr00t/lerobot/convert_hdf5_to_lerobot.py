@@ -57,8 +57,17 @@ def _get_video_pairs(config: Gr00tDatasetConfig) -> list[tuple[str, str]]:
 def _resolve_video_pairs(
     config: Gr00tDatasetConfig, hdf5_data: h5py.Group, trajectory_ids: list[str]
 ) -> list[tuple[str, str]]:
-    """Include optional videos only if every selected episode has them, keeping one dataset-wide schema."""
+    """Validate required cameras and include optional cameras present in every selected episode."""
     video_pairs = _get_video_pairs(config)
+    for trajectory_id in trajectory_ids:
+        camera_obs = hdf5_data[trajectory_id].get("camera_obs", {})
+        for camera_name, video_name in video_pairs:
+            if camera_name not in camera_obs:
+                raise KeyError(
+                    f"Camera '{camera_name}' configured for video '{video_name}' "
+                    f"is missing from trajectory '{trajectory_id}'. Available cameras: {list(camera_obs)}"
+                )
+
     camera_names, video_names = map(set, zip(*video_pairs))
     for camera_name, video_name in config.optional_video_cameras.items():
         if not camera_name or not video_name or camera_name in camera_names or video_name in video_names:
@@ -596,12 +605,6 @@ def convert_hdf5_to_lerobot(config: Gr00tDatasetConfig, *, skip_failed_episodes:
         # 2.3. Generate videos/
         camera_obs = trajectory["camera_obs"]
         for camera_name, video_name in video_pairs:
-            if camera_name not in camera_obs:
-                raise KeyError(
-                    f"Camera '{camera_name}' configured for video '{video_name}' "
-                    f"is missing from trajectory '{trajectory_id}'. Available cameras: {list(camera_obs.keys())}"
-                )
-
             new_video_relpath = config.video_path.format(
                 episode_chunk=episode_chunk, video_key=video_name, episode_index=episode_index
             )

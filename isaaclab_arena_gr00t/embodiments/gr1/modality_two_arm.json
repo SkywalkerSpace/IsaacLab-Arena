@@ -48,6 +48,9 @@
         },
         "right_wrist": {
             "original_key": "observation.images.right_wrist"
+        },
+        "front_view": {
+            "original_key": "observation.images.front_view"
         }
     },
     "annotation": {

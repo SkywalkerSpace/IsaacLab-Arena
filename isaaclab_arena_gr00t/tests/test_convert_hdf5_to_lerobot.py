@@ -3,12 +3,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import json
 import shutil
 from pathlib import Path
 
 import h5py
 import pandas as pd
 import pytest
+import yaml
 
 from isaaclab_arena_gr00t.lerobot.config.dataset_config import Gr00tDatasetConfig
 from isaaclab_arena_gr00t.lerobot.convert_hdf5_to_lerobot import (
@@ -61,6 +63,32 @@ def test_optional_front_camera(tmp_path, num_episodes_with_front_cam):
     assert generate_modality(config, video_pairs)["video"] == {
         video_key.rsplit(".", 1)[-1]: {"original_key": video_key} for _, video_key in expected_pairs
     }
+
+
+def test_gr1_two_arm_requires_front_camera(tmp_path, monkeypatch):
+    monkeypatch.chdir(TestConstants.repo_root)
+    config_path = Path("isaaclab_arena_gr00t/lerobot/config/gr1_two_arm_config.yaml")
+    config_values = yaml.safe_load(config_path.read_text())
+    hdf5_path = tmp_path / "demos.hdf5"
+    with h5py.File(hdf5_path, "w") as hdf5_file:
+        camera_obs = hdf5_file.create_group("data/demo_0/camera_obs")
+        for camera_name in ("robot_pov_cam_rgb", "left_wrist_cam_rgb", "right_wrist_cam_rgb"):
+            camera_obs.create_dataset(camera_name, data=[0])
+
+    config_values.update(data_root=tmp_path, hdf5_name=hdf5_path.name)
+    config = Gr00tDatasetConfig(**config_values)
+    with pytest.raises(KeyError, match="front_cam_rgb.*demo_0"):
+        convert_hdf5_to_lerobot(config)
+    assert not config.lerobot_data_dir.exists()
+
+    with h5py.File(hdf5_path, "r+") as hdf5_file:
+        hdf5_data = hdf5_file["data"]
+        hdf5_data["demo_0/camera_obs"].create_dataset("front_cam_rgb", data=[0])
+        video_pairs = _resolve_video_pairs(config, hdf5_data, ["demo_0"])
+
+    assert video_pairs[-1] == ("front_cam_rgb", "observation.images.front_view")
+    template = json.loads(Path(config.modality_template_path).read_text())
+    assert generate_modality(config, video_pairs)["video"] == template["video"]
 
 
 def test_g1_convert_hdf5_to_lerobot():
