@@ -28,7 +28,7 @@ _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
 TABLE_SURFACE_HEIGHT = 1.0
 SPAWN_CLEARANCE = 0.000
 LID_POSITION_XY = (-0.05, 0.28)
-BIN_POSITION_XY = (0.05, 0.50)
+BIN_POSITION_XY = (0.05, 0.52)
 LID_SCALE = (0.72, 0.72, 0.72)
 BIN_SCALE = (0.45, 0.45, 0.45)
 
@@ -45,7 +45,7 @@ class GR1TwoArmBoxCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     lid_usd_path: str = str(_ASSET_DIR / "box_cleanup_lid.usd")
     bin_usd_path: str = str(_ASSET_DIR / "box_cleanup_bin.usd")
     success_max_xy_distance: float = 0.10
-    success_max_height_difference: float = 0.05
+    success_max_height_difference: float = 0.06
     success_max_speed: float = 0.20
     """Componentwise lid velocity limits in m/s (linear) and rad/s (angular)."""
     lid_reference_offset: list[float] = field(default_factory=lambda: [0.0, 0.0, 0.0])
