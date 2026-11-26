@@ -19,15 +19,30 @@ gr1_two_arm_can_sort_random, "pick the can and put it in the box of the same col
 
 gr1_two_arm_coffee, "insert the coffee pod into the coffee machine and close the lid"
 
-gr1_two_arm_pouring, "pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray."
+gr1_two_arm_pouring, "pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray"
 
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
 
 
-export TSAK_NAME=
+export TSAK_NAME=gr1_two_arm_box_cleanup
+export LANGUAGE_INSTRUCTION="move the box lid onto the box"
 
-export LANGUAGE_INSTRUCTION=
+export TSAK_NAME=gr1_two_arm_drawer_cleanup
+export LANGUAGE_INSTRUCTION="pick the cup and open the drawer, then put the cup in the drawer and close the drawer"
+
+export TSAK_NAME=gr1_two_arm_lift_tray
+export LANGUAGE_INSTRUCTION="put the two objects in the tray and then lift the tray"
+
+export TSAK_NAME=gr1_two_arm_can_sort_random
+export LANGUAGE_INSTRUCTION="pick the can and put it in the box of the same color"
+
+export TSAK_NAME=gr1_two_arm_coffee
+export LANGUAGE_INSTRUCTION="insert the coffee pod into the coffee machine and close the lid"
+
+export TSAK_NAME=gr1_two_arm_pouring
+export LANGUAGE_INSTRUCTION="pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray"
+
 
 export NUM_RECORDED_DEMOS=300
 
