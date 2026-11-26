@@ -48,7 +48,7 @@ _ACTION_SMOOTHING_GAUSSIAN_SIGMA = 1.0
 
 # Execution cap in steps (must be positive). Larger values can reduce replanning frequency
 # and raise the blend cap; smaller values replan more often and cap the blend at fewer steps.
-_ACTION_SMOOTHING_CHUNK_STEP_LIMIT = 8
+_ACTION_SMOOTHING_CHUNK_STEP_LIMIT = 16
 
 # Current action weight (0 to 1). Larger values respond faster;
 # smaller values smooth more but add lag.
