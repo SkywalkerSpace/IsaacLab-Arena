@@ -19,7 +19,7 @@ gr1_two_arm_can_sort_random, "pick the can and put it in the box of the same col
 
 gr1_two_arm_coffee, "insert the coffee pod into the coffee machine and close the lid"
 
-gr1_two_arm_pouring, "Pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray."
+gr1_two_arm_pouring, "pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray."
 
 
 # ----- ----- ----- ----- ----- ----- ----- ----- #
@@ -235,6 +235,7 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --record_viewport_video \
   --record_camera_video \
   --record_actions \
+  --no-finger_action_smoothing \
   ${TSAK_NAME} \
   --embodiment gr1_joint
   # --no-randomize_object_poses
