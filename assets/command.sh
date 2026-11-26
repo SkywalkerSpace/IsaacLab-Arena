@@ -132,7 +132,7 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
   --global-batch-size 16 \
   --gradient-accumulation-steps 8 \
-  --max-steps 60000 \
+  --max-steps 50000 \
   --num-gpus 1 \
   --save-steps 10000 \
   --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
@@ -154,7 +154,7 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
   --global-batch-size 16 \
   --gradient-accumulation-steps 8 \
-  --max-steps 60000 \
+  --max-steps 50000 \
   --num-gpus 1 \
   --save-steps 10000 \
   --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
@@ -196,7 +196,7 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
     --modality-config-path "${ARENA_ROOT}/isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py" \
     --global-batch-size 16 \
     --gradient-accumulation-steps 8 \
-    --max-steps 60000 \
+    --max-steps 50000 \
     --num-gpus 1 \
     --save-steps 10000 \
     --base-model-path /home/mayuhang/models/GR00T-N1.6-3B \
@@ -214,7 +214,7 @@ cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
   --modality-config-path ../../isaaclab_arena_gr00t/embodiments/gr1/gr1_two_arm_data_config.py \
-  --model-path ../../models/checkpoint-60000 \
+  --model-path ../../models/checkpoint-50000 \
   --embodiment-tag GR1 \
   --device cuda --host 127.0.0.1 --port 5555
 
@@ -260,7 +260,7 @@ cd submodules/Isaac-GR00T
 
 CUDA_VISIBLE_DEVICES=3 python gr00t/eval/open_loop_eval.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
-  --model-path ../../models/${TSAK_NAME}/checkpoint-60000 \
+  --model-path ../../models/${TSAK_NAME}/checkpoint-50000 \
   --embodiment-tag GR1 \
   --traj-ids 0 1 2 3 4 \
   --steps 300 \
