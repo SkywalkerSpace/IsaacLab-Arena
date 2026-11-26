@@ -40,6 +40,21 @@ if TYPE_CHECKING:
     from isaaclab_arena.policy.policy_base import PolicyBase
 
 
+_ARM_ACTION_DIM = 14
+
+# Sigma in steps (must be positive). Larger values give nearby steps more weight;
+# smaller values preserve more of the original action.
+_ACTION_SMOOTHING_GAUSSIAN_SIGMA = 1.0
+
+# Execution cap in steps (must be positive). Larger values can reduce replanning frequency
+# and raise the blend cap; smaller values replan more often and cap the blend at fewer steps.
+_ACTION_SMOOTHING_CHUNK_STEP_LIMIT = 8
+
+# Current action weight (0 to 1). Larger values respond faster;
+# smaller values smooth more but add lag.
+_ACTION_SMOOTHING_EMA_ALPHA = 0.75
+
+
 def get_policy_cls(policy_type: str) -> type[PolicyBase]:
     """Get the policy class for the given policy type name.
 
@@ -71,9 +86,6 @@ def is_distributed(args_cli: argparse.Namespace) -> bool:
     )
 
 
-_ARM_ACTION_DIM = 14
-
-
 def _gaussian_smooth_action_chunk(chunk: torch.Tensor, *, action_dim_limit: int | None = None) -> torch.Tensor:
     """Smooth the leading action dimensions along time in a single or batched chunk."""
     from torch import cat
@@ -83,8 +95,9 @@ def _gaussian_smooth_action_chunk(chunk: torch.Tensor, *, action_dim_limit: int 
     if length <= 1:
         return chunk
 
-    # Five-tap Gaussian (sigma=1 step). Repeat endpoints instead of looking across chunks.
-    neighbor_weight, outer_weight = exp(-0.5), exp(-2.0)
+    # Five-tap Gaussian. Repeat endpoints instead of looking across chunks.
+    sigma_squared = _ACTION_SMOOTHING_GAUSSIAN_SIGMA**2
+    neighbor_weight, outer_weight = exp(-0.5 / sigma_squared), exp(-2.0 / sigma_squared)
     normalizer = 1.0 + 2.0 * (neighbor_weight + outer_weight)
     prefix = chunk[..., :action_dim_limit]
     padded = pad(prefix.transpose(-1, -2), (2, 2), mode="replicate").transpose(-1, -2)
@@ -130,7 +143,7 @@ def rollout_policy(
             )
         if has_chunk_step_limit:
             # A step cap enables crossfade with the unexecuted tail of the previous chunk.
-            policy.action_chunk_step_limit = 8 if action_smoothing else None
+            policy.action_chunk_step_limit = _ACTION_SMOOTHING_CHUNK_STEP_LIMIT if action_smoothing else None
         if has_crossfade_dim_limit:
             policy.action_chunk_crossfade_dim_limit = smoothing_dim_limit if action_smoothing else None
         if num_episodes is not None:
@@ -149,7 +162,6 @@ def rollout_policy(
             steps_pbar = tqdm.tqdm(desc="Steps", unit="step", position=1, mininterval=0, miniters=1)
 
         num_steps_completed = 0
-        action_ema_alpha = 0.60  # Weight of the current policy action.
         previous_prefix = None
         reset_env_ids = None
 
@@ -161,7 +173,7 @@ def rollout_policy(
                 if action_smoothing:
                     prefix = actions[..., :smoothing_dim_limit]
                     if previous_prefix is not None:
-                        smoothed = torch.lerp(previous_prefix, prefix, action_ema_alpha)
+                        smoothed = torch.lerp(previous_prefix, prefix, _ACTION_SMOOTHING_EMA_ALPHA)
                         if reset_env_ids is not None and reset_env_ids.numel() > 0:
                             smoothed[reset_env_ids] = prefix[reset_env_ids]
                         if smoothing_dim_limit is not None and smoothing_dim_limit < actions.shape[-1]:
