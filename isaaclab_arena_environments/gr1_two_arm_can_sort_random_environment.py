@@ -367,6 +367,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         """Build the custom task from stock GR1 configs without importing the custom Lab environment."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
+        import isaaclab.utils.math as pose_utils
         from isaaclab.envs.mimic_env_cfg import (
             MimicEnvCfg,
             SubTaskConfig,
@@ -393,6 +394,12 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
         from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
+
+        # Older Isaac Lab math modules lack the helper called by Mimic's TRANSFORM coordination.
+        if not hasattr(pose_utils, "get_delta_object_pose"):
+            pose_utils.get_delta_object_pose = lambda cur_obj_pose, src_obj_pose: pose_utils.pose_in_A_to_pose_in_B(
+                pose_in_A=pose_utils.pose_inv(src_obj_pose), pose_A_in_B=cur_obj_pose
+            )
 
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         left_positions = {"box": {}, "can": {}}
