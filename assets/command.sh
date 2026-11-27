@@ -218,7 +218,7 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --viz none \
   --remote_host 127.0.0.1 \
   --remote_port 5555 \
-  --num_episodes 20 \
+  --num_episodes 100 \
   --enable_cameras \
   --record_viewport_video \
   --record_camera_video \
@@ -226,6 +226,7 @@ CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --no-finger_action_smoothing \
   ${TSAK_NAME} \
   --embodiment gr1_joint
+  # --randomization_seed 7
   # --no-randomize_object_poses
 
 
