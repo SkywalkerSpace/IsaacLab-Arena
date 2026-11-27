@@ -1,29 +1,3 @@
-put_item_in_fridge_and_close_door
-
-gr1_open_microwave
-
-gr1_table_multi_object_no_collision
-
-gr1_turn_stand_mixer_knob
-
-gr1_pick_place
-
-
-gr1_two_arm_box_cleanup, "move the box lid onto the box"
-
-gr1_two_arm_drawer_cleanup, "pick the cup and open the drawer, then put the cup in the drawer and close the drawer"
-
-gr1_two_arm_lift_tray, "put the two objects in the tray and then lift the tray"
-
-gr1_two_arm_can_sort_random, "pick the can and put it in the box of the same color"
-
-gr1_two_arm_coffee, "insert the coffee pod into the coffee machine and close the lid"
-
-gr1_two_arm_pouring, "pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray"
-
-
-# ----- ----- ----- ----- ----- ----- ----- ----- #
-
 
 export TSAK_NAME=gr1_two_arm_box_cleanup
 export LANGUAGE_INSTRUCTION="move the box lid onto the box"
@@ -234,8 +208,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
 
 cd IsaacLab-Arena
 
-# checkpoint config.json num_inference_timesteps
-# gr1_two_arm_config.yaml action_chunk_length
+# checkpoint config.json , num_inference_timesteps
+# gr1_two_arm_config.yaml , action_chunk_length
 
 CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
@@ -283,3 +257,31 @@ CUDA_VISIBLE_DEVICES=3 python gr00t/eval/open_loop_eval.py \
 
 
 tensorboard --logdir  ./models --host 0.0.0.0 --port 1024
+
+
+# ----- ----- ----- ----- ----- ----- ----- ----- #
+
+put_item_in_fridge_and_close_door
+
+gr1_open_microwave
+
+gr1_table_multi_object_no_collision
+
+gr1_turn_stand_mixer_knob
+
+gr1_pick_place
+
+
+gr1_two_arm_box_cleanup, "move the box lid onto the box"
+
+gr1_two_arm_drawer_cleanup, "pick the cup and open the drawer, then put the cup in the drawer and close the drawer"
+
+gr1_two_arm_lift_tray, "put the two objects in the tray and then lift the tray"
+
+gr1_two_arm_can_sort_random, "pick the can and put it in the box of the same color"
+
+gr1_two_arm_coffee, "insert the coffee pod into the coffee machine and close the lid"
+
+gr1_two_arm_pouring, "pick up the cup, pour the ball into the bowl, then pick up the bowl and place it on the tray"
+
+# ----- ----- ----- ----- ----- ----- ----- ----- #
