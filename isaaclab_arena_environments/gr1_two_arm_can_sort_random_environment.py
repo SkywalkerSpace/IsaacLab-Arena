@@ -25,7 +25,9 @@ if TYPE_CHECKING:
 
 
 _ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "usd"
-HANDOFF_MAX_DISTANCE = 0.15
+CAN_GRASP_MAX_PALM_DISTANCE = 0.10
+CAN_GRASP_MIN_FINGER_CURL = math.radians(20.0)
+CAN_GRASP_MIN_CURLED_FINGERS = 2
 POSITION_XY_RANDOM_MAX = 0.05
 BOX_CLOCKWISE_90_ROTATION_XYZW = (0.0, 0.0, -math.sqrt(0.5), math.sqrt(0.5))
 TABLE_SURFACE_HEIGHT = 1.0
@@ -141,25 +143,43 @@ def _left_can_dropped(env: ManagerBasedRLEnv, minimum_height: float = 0.5) -> to
     return _left_can_state(env, "root_pos_w")[:, 2] - env.scene.env_origins[:, 2] < minimum_height
 
 
-def _object_near_left_palm(
-    env: ManagerBasedRLEnv,
-    min_height_by_color: dict[str, float],
-    max_distance: float = HANDOFF_MAX_DISTANCE,
-) -> torch.Tensor:
-    """Use lift and left-palm proximity as a grasp proxy for the initial left-side can."""
+def _hand_grasping_can(env: ManagerBasedRLEnv, hand: str, can_pos_w: torch.Tensor) -> torch.Tensor:
+    """Approximate a grasp using palm proximity and measured finger curl."""
     import torch
 
     robot = env.scene["robot"]
-    palm_index = robot.data.body_names.index("left_hand_pitch_link")
-    object_pos = _left_can_state(env, "root_pos_w")
-    palm_pos = robot.data.body_pos_w.torch[:, palm_index]
+    prefix = {"left": "L", "right": "R"}[hand]
+    fingers = ("index", "middle", "ring", "pinky")
+    wrist_index = robot.data.body_names.index(f"{hand}_hand_pitch_link")
+    knuckle_indices = [robot.data.body_names.index(f"{prefix}_{finger}_proximal_link") for finger in fingers]
+    joint_indices = [robot.joint_names.index(f"{prefix}_{finger}_proximal_joint") for finger in fingers]
+    body_pos_w = robot.data.body_pos_w.torch
+    palm_pos_w = (body_pos_w[:, wrist_index] + body_pos_w[:, knuckle_indices].mean(dim=1)) / 2.0
+    finger_curl = robot.data.joint_pos.torch[:, joint_indices].abs()
+    closed = (finger_curl > CAN_GRASP_MIN_FINGER_CURL).sum(dim=1) >= CAN_GRASP_MIN_CURLED_FINGERS
+    return closed & (torch.linalg.vector_norm(can_pos_w - palm_pos_w, dim=1) < CAN_GRASP_MAX_PALM_DISTANCE)
+
+
+def _can_grasp_stage(
+    env: ManagerBasedRLEnv,
+    hand: str,
+    min_height_by_color: dict[str, float],
+    released_hand: str | None = None,
+) -> torch.Tensor:
+    """Detect a lifted task can held by one hand and optionally released by the other."""
+    import torch
+
+    can_pos_w = _left_can_state(env, "root_pos_w")
     min_height = torch.where(
         env._can_left_is_blue,
-        object_pos.new_tensor(min_height_by_color["blue"]),
-        object_pos.new_tensor(min_height_by_color["red"]),
+        can_pos_w.new_tensor(min_height_by_color["blue"]),
+        can_pos_w.new_tensor(min_height_by_color["red"]),
     )
-    lifted = object_pos[:, 2] - env.scene.env_origins[:, 2] > min_height
-    return lifted & (torch.linalg.vector_norm(object_pos - palm_pos, dim=1) < max_distance)
+    lifted = can_pos_w[:, 2] - env.scene.env_origins[:, 2] > min_height
+    grasped = lifted & _hand_grasping_can(env, hand, can_pos_w)
+    if released_hand is not None:
+        grasped &= ~_hand_grasping_can(env, released_hand, can_pos_w)
+    return grasped
 
 
 def _randomize_pair(
@@ -329,7 +349,7 @@ def _configure_two_arm_can_sort_random(
 
 @register_environment
 class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSortRandomEnvironmentCfg]):
-    """Grasp the initial left-side can with the left hand and place it into the same-color box."""
+    """Pick up the initial left-side can with the right hand, then hand it off to the left to sort it."""
 
     name = "gr1_two_arm_can_sort_random"
     _legacy_argparse_cfg_type = GR1TwoArmCanSortRandomEnvironmentCfg
@@ -347,7 +367,13 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         """Build the custom task from stock GR1 configs without importing the custom Lab environment."""
         import isaaclab.envs.mdp as mdp
         import isaaclab.sim as sim_utils
-        from isaaclab.envs.mimic_env_cfg import MimicEnvCfg, SubTaskConfig
+        from isaaclab.envs.mimic_env_cfg import (
+            MimicEnvCfg,
+            SubTaskConfig,
+            SubTaskConstraintConfig,
+            SubTaskConstraintCoordinationScheme,
+            SubTaskConstraintType,
+        )
         from isaaclab.managers import EventTermCfg, ObservationGroupCfg, ObservationTermCfg, SceneEntityCfg
         from isaaclab.scene import InteractiveSceneCfg
         from isaaclab.sensors import CameraCfg
@@ -470,16 +496,20 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
             concatenate_terms = False
             enable_corruption = False
 
+        # The grasp signals follow the reset-time task can, regardless of its color or current side.
+        min_grasp_height_by_color = {
+            color: position[2] + CAN_GRASP_MIN_LIFT for color, position in left_positions["can"].items()
+        }
+
         @configclass
         class CanSortRandomSubtaskTermsCfg(ObservationGroupCfg):
-            # Track the can's reset-time identity, not whichever can is currently on the left.
+            right_grasp = ObservationTermCfg(
+                func=_can_grasp_stage,
+                params={"hand": "right", "min_height_by_color": min_grasp_height_by_color},
+            )
             handoff = ObservationTermCfg(
-                func=_object_near_left_palm,
-                params={
-                    "min_height_by_color": {
-                        color: position[2] + CAN_GRASP_MIN_LIFT for color, position in left_positions["can"].items()
-                    }
-                },
+                func=_can_grasp_stage,
+                params={"hand": "left", "released_hand": "right", "min_height_by_color": min_grasp_height_by_color},
             )
             concatenate_terms = False
             enable_corruption = False
@@ -530,7 +560,7 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 if env_ids is None:
                     env_ids = slice(None)
                 terms = self.obs_buf["subtask_terms"]
-                return {"handoff": terms["handoff"][env_ids]}
+                return {name: terms[name][env_ids] for name in ("right_grasp", "handoff")}
 
         robot_x, robot_y, _ = source_scene.robot.init_state.pos
 
@@ -645,60 +675,45 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
                 )
 
             def get_mimic_env_cfg(self, arm_mode: ArmMode):
-                assert arm_mode == ArmMode.DUAL_ARM, "Can sort random one arm in Mimic demonstrations"
+                assert arm_mode == ArmMode.DUAL_ARM, "Can sort requires both arms in Mimic demonstrations"
                 mimic_cfg = MimicEnvCfg()
                 mimic_cfg.datagen_config.name = "gr1_two_arm_can_sort_random_D0"
                 for key, value in MIMIC_DATAGEN_CONFIG_DEFAULTS.items():
                     setattr(mimic_cfg.datagen_config, key, value)
-                mimic_cfg.subtask_configs["right"] = [
-                    SubTaskConfig(
-                        object_ref="can",
-                        subtask_term_signal="handoff",
+
+                def subtask(object_ref, term_signal, description, *, interpolation_steps=0, action_noise=0.003):
+                    return SubTaskConfig(
+                        object_ref=object_ref,
+                        subtask_term_signal=term_signal,
                         first_subtask_start_offset_range=(0, 0),
                         subtask_term_offset_range=(0, 0),
-                        selection_strategy="nearest_neighbor_object",
-                        selection_strategy_kwargs={"nn_k": 3},
-                        action_noise=0.003,
-                        num_interpolation_steps=0,
+                        selection_strategy="nearest_neighbor_object" if object_ref else "random",
+                        selection_strategy_kwargs={"nn_k": 3} if object_ref else {},
+                        action_noise=action_noise,
+                        num_interpolation_steps=interpolation_steps,
                         num_fixed_steps=0,
                         apply_noise_during_interpolation=False,
-                    ),
-                    SubTaskConfig(
-                        object_ref="target_box",
-                        subtask_term_signal=None,
-                        subtask_term_offset_range=(0, 0),
-                        selection_strategy="nearest_neighbor_object",
-                        selection_strategy_kwargs={"nn_k": 3},
-                        action_noise=0.003,
-                        num_interpolation_steps=3,
-                        num_fixed_steps=0,
-                        apply_noise_during_interpolation=False,
-                    ),
+                        description=description,
+                    )
+
+                # Right first: select the source demo using the right hand and the can pose at pickup.
+                mimic_cfg.subtask_configs["right"] = [
+                    subtask("can", "right_grasp", "Grasp and lift the can with the right hand."),
+                    subtask("can", "handoff", "Present the can to the left hand and release it.", action_noise=0.0),
+                    subtask(None, None, "Move the right hand clear while the left sorts the can.", interpolation_steps=3),
                 ]
                 mimic_cfg.subtask_configs["left"] = [
-                    SubTaskConfig(
-                        object_ref="can",
-                        subtask_term_signal="handoff",
-                        first_subtask_start_offset_range=(0, 0),
-                        subtask_term_offset_range=(0, 0),
-                        selection_strategy="nearest_neighbor_object",
-                        selection_strategy_kwargs={"nn_k": 3},
-                        action_noise=0.003,
-                        num_interpolation_steps=0,
-                        num_fixed_steps=0,
-                        apply_noise_during_interpolation=False,
-                    ),
-                    SubTaskConfig(
-                        object_ref="target_box",
-                        subtask_term_signal=None,
-                        subtask_term_offset_range=(0, 0),
-                        selection_strategy="nearest_neighbor_object",
-                        selection_strategy_kwargs={"nn_k": 3},
-                        action_noise=0.003,
-                        num_interpolation_steps=3,
-                        num_fixed_steps=0,
-                        apply_noise_during_interpolation=False,
-                    ),
+                    subtask(None, "right_grasp", "Keep the left hand clear during right-hand pickup."),
+                    subtask("can", "handoff", "Receive the can from the right hand.", action_noise=0.0),
+                    subtask("target_box", None, "Place the can in the matching-color box.", interpolation_steps=3),
+                ]
+                mimic_cfg.task_constraint_configs = [
+                    SubTaskConstraintConfig(
+                        eef_subtask_constraint_tuple=[("right", 1), ("left", 1)],
+                        constraint_type=SubTaskConstraintType.COORDINATION,
+                        coordination_scheme=SubTaskConstraintCoordinationScheme.TRANSFORM,
+                        coordination_synchronize_start=True,
+                    )
                 ]
                 return mimic_cfg
 
@@ -839,8 +854,9 @@ class GR1TwoArmCanSortRandomEnvironment(ArenaEnvironmentFactory[GR1TwoArmCanSort
         scene = Scene(assets=[table, blue_box, red_box, blue_can, red_can, *can_holders, ground, light])
         task = TwoArmCanSortRandomTask(object=blue_can, episode_length_s=cfg.episode_length_s)
         task.task_description = (
-            "Grasp the can initially at the left can position with the left hand, "
-            "then place that can inside the box of the same color. Placing it in the other box fails. "
+            "Grasp and lift the can initially at the left can position with the right hand, "
+            "hand it off to the left hand, then use the left hand to place it in the box of the same color. "
+            "Placing it in the other box fails. "
         )
         if cfg.randomize_object_poses:
             task.task_description += (
