@@ -161,8 +161,6 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   #--color-jitter-params brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08 \
 
 
-# config.json num_inference_timesteps
-
 CUDA_VISIBLE_DEVICES=3 uv run python gr00t/experiment/launch_finetune.py \
   --dataset-path ../../datasets/${TSAK_NAME}_generated_${NUM_GENERATED_DEMOS}/lerobot \
   --output-dir ../../models/${TSAK_NAME}_${NUM_GENERATED_DEMOS}/ \
@@ -236,7 +234,8 @@ CUDA_VISIBLE_DEVICES=3 uv run python gr00t/eval/run_gr00t_server.py \
 
 cd IsaacLab-Arena
 
-# action_chunk_length
+# checkpoint config.json num_inference_timesteps
+# gr1_two_arm_config.yaml action_chunk_length
 
 CUDA_VISIBLE_DEVICES=3 python isaaclab_arena/evaluation/policy_runner.py \
   --policy_type isaaclab_arena_gr00t.policy.gr00t_remote_closedloop_policy.Gr00tRemoteClosedloopPolicy \
