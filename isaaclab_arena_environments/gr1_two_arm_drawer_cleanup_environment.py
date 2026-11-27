@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
-from isaaclab_arena_environments.mdp.gr1_layout import reset_object_pose
 
 if TYPE_CHECKING:
     import torch
@@ -341,6 +340,7 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
         from isaaclab_arena.utils.configclass import combine_configclass_instances
         from isaaclab_arena.utils.pose import Pose
         from isaaclab_arena.utils.usd.helpers import compute_local_bounding_box_from_usd
+        from isaaclab_arena_environments.mdp.gr1_layout import reset_object_pose
 
         source_scene = PickPlaceGR1T2SceneCfg(num_envs=1, env_spacing=2.5, replicate_physics=True)
         source_events = EventCfg()
