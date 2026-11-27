@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
+from isaaclab_arena_environments.mdp.gr1_layout import get_layout_rng, reset_object_pose
 
 if TYPE_CHECKING:
     import torch
@@ -44,7 +45,9 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
     teleop_device: str | None = None
     episode_length_s: float = 10.0
     randomize_object_poses: bool = True
-    """Randomize object positions and rotations within the configured reset ranges."""
+    """Randomize object poses and whether the two pickup objects swap slots on reset."""
+    randomization_seed: int | None = 42
+    """Layout seed, independent of Arena's seed; defaults to 42. None samples a fresh seed on each launch."""
     lift_tray_obj0_path: str = str(_ASSET_DIR / "lift_tray_obj0.usd")
     lift_tray_obj1_path: str = str(_ASSET_DIR / "lift_tray_obj1.usd")
     lift_tray_pot_path: str = str(_ASSET_DIR / "lift_tray_pot.usd")
@@ -66,6 +69,9 @@ class GR1TwoArmLiftTrayEnvironmentCfg(ArenaEnvironmentCfg):
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
+        assert self.randomization_seed is None or (
+            isinstance(self.randomization_seed, int) and 0 <= self.randomization_seed < 2**63
+        ), "randomization_seed must be None or an integer in [0, 2**63)"
         if self.embodiment not in ("gr1_pink", "gr1_joint"):
             raise ValueError(
                 f"Two-arm lift tray requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
@@ -121,23 +127,23 @@ def _reset_tray_objects(
     env: ManagerBasedRLEnv,
     env_ids: torch.Tensor | None,
     pose_range: dict[str, tuple[float, float]],
-    seed: int = 42,
+    randomization_seed: int | None,
 ) -> None:
-    """Reset both objects, independently swapping their XY slots with 50% probability per environment."""
+    """Reset both objects, optionally swapping their XY slots with 50% probability per environment."""
     import torch
 
-    import isaaclab.envs.mdp as mdp
-    from isaaclab.managers import EventTermCfg, SceneEntityCfg
+    from isaaclab.managers import SceneEntityCfg
 
     if env_ids is None:
         env_ids = torch.arange(env.num_envs, device=env.device)
     env_ids = torch.as_tensor(env_ids, dtype=torch.long, device=env.device).reshape(-1)
     if len(env_ids) == 0:
         return
-    if not hasattr(env, "_lift_tray_swap_rng"):
-        # Seed once so resets advance a reproducible sequence instead of repeating one layout.
-        env._lift_tray_swap_rng = torch.Generator(device=env.device).manual_seed(seed)
-    swap = torch.rand(len(env_ids), device=env.device, generator=env._lift_tray_swap_rng) < 0.5
+    if pose_range:
+        rng = get_layout_rng(env, randomization_seed)
+        swap = torch.rand(len(env_ids), device=env.device, generator=rng) < 0.5
+    else:
+        swap = torch.zeros(len(env_ids), device=env.device, dtype=torch.bool)
     for name, source_xy, target_xy in (
         ("obj0", OBJ0_POSITION_XY, OBJ1_POSITION_XY),
         ("obj1", OBJ1_POSITION_XY, OBJ0_POSITION_XY),
@@ -151,18 +157,7 @@ def _reset_tray_objects(
                 for axis, source, target in zip(("x", "y"), source_xy, target_xy):
                     lower, upper = object_pose_range.get(axis, (0.0, 0.0))
                     object_pose_range[axis] = (lower + target - source, upper + target - source)
-            # This event class caches its ranges in __init__, so configure each slot before constructing it.
-            reset_cfg = EventTermCfg(
-                func=mdp.reset_root_state_uniform,
-                mode="reset",
-                params={
-                    "pose_range": object_pose_range,
-                    "velocity_range": {},
-                    "asset_cfg": SceneEntityCfg(name),
-                },
-            )
-            reset_term = mdp.reset_root_state_uniform(cfg=reset_cfg, env=env)
-            reset_term(env, selected_ids, **reset_cfg.params)
+            reset_object_pose(env, selected_ids, SceneEntityCfg(name), object_pose_range, randomization_seed)
 
 
 def _object_lifted(
@@ -376,17 +371,18 @@ class GR1TwoArmLiftTrayEnvironment(ArenaEnvironmentFactory[GR1TwoArmLiftTrayEnvi
                         if cfg.randomize_object_poses
                         else {}
                     ),
-                    "seed": 42,
+                    "randomization_seed": cfg.randomization_seed,
                 }
             )
             reset_pot = source_events.reset_object.replace(
+                func=reset_object_pose,
                 params={
                     "pose_range": (
                         {"x": (-0.05, 0.05), "y": (0.0, 0.05), "yaw": (-math.radians(20), math.radians(20))}
                         if cfg.randomize_object_poses
                         else {}
                     ),
-                    "velocity_range": {},
+                    "randomization_seed": cfg.randomization_seed,
                     "asset_cfg": SceneEntityCfg("pot"),
                 }
             )

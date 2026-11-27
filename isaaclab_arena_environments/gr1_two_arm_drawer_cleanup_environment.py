@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab_arena.assets.register import register_environment
 from isaaclab_arena.environments.arena_environment_factory import ArenaEnvironmentCfg, ArenaEnvironmentFactory
+from isaaclab_arena_environments.mdp.gr1_layout import reset_object_pose
 
 if TYPE_CHECKING:
     import torch
@@ -43,6 +44,8 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
     episode_length_s: float = 10.0
     randomize_object_poses: bool = True
     """Randomize object positions and rotations within the configured reset ranges."""
+    randomization_seed: int | None = 42
+    """Layout seed, independent of Arena's seed; defaults to 42. None samples a fresh seed on each launch."""
     drawer_cabinet_path: str = str(_ASSET_DIR / "drawer_cabinet.usd")
     drawer_mug_path: str = str(_ASSET_DIR / "drawer_hollow_mug.usd")
     success_max_xy_distance: float = 0.10
@@ -60,6 +63,9 @@ class GR1TwoArmDrawerCleanupEnvironmentCfg(ArenaEnvironmentCfg):
 
     def __post_init__(self) -> None:
         assert math.isfinite(self.episode_length_s) and self.episode_length_s > 0, "episode_length_s must be positive"
+        assert self.randomization_seed is None or (
+            isinstance(self.randomization_seed, int) and 0 <= self.randomization_seed < 2**63
+        ), "randomization_seed must be None or an integer in [0, 2**63)"
         if self.embodiment not in ("gr1_pink", "gr1_joint"):
             raise ValueError(
                 f"Two-arm drawer cleanup requires a GR1T2 embodiment ('gr1_pink' or 'gr1_joint'); "
@@ -277,8 +283,6 @@ def _configure_two_arm_drawer_cleanup(
 
     env_cfg = _configure_gr1_pick_place(env_cfg)
     env_cfg = set_control_rate_50hz(env_cfg)
-    # Pose reset events use Isaac Lab's global RNG, seeded once when the environment starts.
-    env_cfg.seed = 42
     camera_names = ("robot_pov_cam", "left_wrist_cam", "right_wrist_cam", "front_cam")
     if hasattr(env_cfg.scene, "robot_pov_cam"):
         env_cfg.image_obs_list = [name for name in camera_names if getattr(env_cfg.scene, name, None) is not None]
@@ -364,20 +368,22 @@ class GR1TwoArmDrawerCleanupEnvironment(ArenaEnvironmentFactory[GR1TwoArmDrawerC
             set_drawer_travel_limits = EventTermCfg(func=_set_drawer_travel_limits, mode="startup")
             reset_object = None
             reset_mug = source_events.reset_object.replace(
+                func=reset_object_pose,
                 params={
                     "pose_range": (
                         {"x": (-0.05, 0.05), "y": (-0.05, 0.05), "yaw": (-1.57079, 1.57079)}
                         if cfg.randomize_object_poses
                         else {}
                     ),
-                    "velocity_range": {},
+                    "randomization_seed": cfg.randomization_seed,
                     "asset_cfg": SceneEntityCfg("mug"),
                 }
             )
             reset_drawer = source_events.reset_object.replace(
+                func=reset_object_pose,
                 params={
                     "pose_range": {"x": (-0.05, 0.05), "y": (0.0, 0.05)} if cfg.randomize_object_poses else {},
-                    "velocity_range": {},
+                    "randomization_seed": cfg.randomization_seed,
                     "asset_cfg": SceneEntityCfg("drawer"),
                 }
             )
