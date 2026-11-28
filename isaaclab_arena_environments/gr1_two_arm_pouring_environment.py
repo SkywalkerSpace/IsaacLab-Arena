@@ -55,7 +55,7 @@ class GR1TwoArmPouringEnvironmentCfg(ArenaEnvironmentCfg):
     debug_thumb_joints: bool = False  # --debug_thumb_joints
     """Log env_0 thumb commands, measured angles, and limits every 0.5 s (gr1_pink only)."""
     episode_length_s: float = 10.0
-    finger_effort_limit: float = 2.0
+    finger_effort_limit: float = 5.0
     """Per-finger-joint drive torque limit [N m] for the left hand only; preserve right-hand defaults."""
     randomize_object_poses: bool = True
     """Jitter cup/bowl XY and sample a shared 0–90 degree cup/holder yaw; disable for fixed poses."""
